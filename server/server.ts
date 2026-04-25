@@ -341,6 +341,9 @@ const io = new Server(httpServer, {
     origin: process.env.CLIENT_ORIGIN ?? "*",
     methods: ["GET", "POST"],
   },
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ["websocket", "polling"],
 });
 
 const NAMES = ["Kram","Zara","Vex","Liora","Donn","Sable","Ryke","Mira","Cael","Nyra"];
