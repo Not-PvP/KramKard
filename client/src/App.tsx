@@ -478,7 +478,7 @@ export default function App() {
         if (remaining <= 0) {
           clearInterval(countdownInterval.current!);
           socket.emit("forfeit");
-          setTimeout(() => { window.location.href = window.location.pathname; }, 300);
+          setTimeout(() => { window.location.href = window.location.origin; }, 300);
         }
       }, 1000);
     }, INACTIVITY_MS);
@@ -494,7 +494,7 @@ export default function App() {
     clearInactivityTimers();
     setShowInactivityWarning(false);
     socket.emit("forfeit");
-    setTimeout(() => { window.location.href = window.location.pathname; }, 300);
+    setTimeout(() => { window.location.href = window.location.origin; }, 300);
   };
 
   useEffect(() => {
@@ -746,7 +746,7 @@ const handleLeave = () => {
                   {myRematchReady ? "READY ✓" : "REMATCH?"}
                 </button>
                 <button
-                  onClick={() => { window.location.href = window.location.pathname; }}
+                  onClick={() => { window.location.href = window.location.origin; }}
                   style={{ background: "transparent", border: "1px solid #fc5c65", color: "#fc5c65", padding: "8px 18px", fontSize: 7, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}
                 >
                   ✕ LEAVE
