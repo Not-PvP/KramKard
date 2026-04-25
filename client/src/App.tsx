@@ -452,7 +452,11 @@ function ShareLink({ roomId }: { roomId: string }) {
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
-const socket: Socket = io(import.meta.env.VITE_SERVER_URL ?? "http://localhost:3000");
+const socket: Socket = io(import.meta.env.VITE_SERVER_URL ?? "http://localhost:3000", {
+  transports: ["websocket"],
+  reconnectionAttempts: 5,
+  reconnectionDelay: 2000,
+});
 
 export default function App() {
   const [gameState, setGameState] = useState<GameState | null>(null);
