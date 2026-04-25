@@ -453,9 +453,11 @@ function ShareLink({ roomId }: { roomId: string }) {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 const socket: Socket = io(import.meta.env.VITE_SERVER_URL ?? "http://localhost:3000", {
-  transports: ["websocket"],
-  reconnectionAttempts: 5,
-  reconnectionDelay: 2000,
+  transports: ["websocket", "polling"],
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 20000,
 });
 
 export default function App() {
@@ -488,11 +490,16 @@ export default function App() {
     socket.on("roomFull", () => setRoomFull(true));
     socket.on("leaderboard", (data: LeaderboardEntry[]) => setLeaderboard(data));
 
-    // Reconnect on socket reconnect
     socket.on("connect", () => {
-      const name = localStorage.getItem("kramkard_name") ?? undefined;
-      socket.emit("joinRoom", { roomId: roomId.current, sessionToken: sessionToken.current, preferredName: name });
+      const name = localStorage.getItem("kramkard_name");
+      if (name) {
+        socket.emit("joinRoom", { 
+        roomId: roomId.current, 
+        sessionToken: sessionToken.current, 
+        preferredName: name 
     });
+  }
+});
 
     return () => {
       socket.off("stateUpdate");
@@ -514,7 +521,10 @@ export default function App() {
     socket.emit("setName", name);
   }
 
-  const playCard = (cardId: CardId) => socket.emit("playCard", cardId);
+  const playCard = (cardId: CardId) => {
+    console.log("playing card:", cardId, "isMyTurn:", isMyTurn, "socket connected:", socket.connected);
+    socket.emit("playCard", cardId);
+  };
   const requestRematch = () => socket.emit("rematch");
   const openLeaderboard = () => {
     socket.emit("getLeaderboard");
