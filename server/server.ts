@@ -620,4 +620,11 @@ io.on("connection", socket => {
   });
 });
 
-httpServer.listen(3000, () => console.log("✅ Server running on :3000"));
+httpServer.on("request", (req, res) => {
+  res.writeHead(200);
+  res.end("OK");
+});
+
+httpServer.listen(process.env.PORT ? parseInt(process.env.PORT) : 3000, () =>
+  console.log("✅ Server running")
+);
