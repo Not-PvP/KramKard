@@ -409,15 +409,17 @@ io.on("connection", socket => {
     broadcastRoom(room);
   });
 
-  socket.on("playCard", (cardId: CardId) => {
+socket.on("playCard", (cardId: CardId) => {
     const sessionToken = findSessionBySocket(socket.id);
-    if (!sessionToken) return;
+    console.log("playCard received:", cardId, "socketId:", socket.id, "sessionToken:", sessionToken);
+    if (!sessionToken) { console.log("BLOCKED: no sessionToken"); return; }
     const roomId = sessionToRoom.get(sessionToken);
-    if (!roomId) return;
+    if (!roomId) { console.log("BLOCKED: no roomId"); return; }
     const room = rooms.get(roomId);
-    if (!room || room.gameOver || room.turn !== sessionToken) return;
+    console.log("turn:", room?.turn, "sessionToken:", sessionToken, "match:", room?.turn === sessionToken);
+    if (!room || room.gameOver || room.turn !== sessionToken) { console.log("BLOCKED: not your turn or game over"); return; }
     const player = room.players[sessionToken];
-    if (!player || !player.hand.includes(cardId)) return;
+    if (!player || !player.hand.includes(cardId)) { console.log("BLOCKED: card not in hand"); return; }
     resolveCard(room, sessionToken, cardId);
   });
 
