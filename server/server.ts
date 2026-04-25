@@ -329,7 +329,13 @@ async function resolveCard(room: Room, actorToken: string, cardId: CardId) {
 
 // ─── HTTP + Socket.IO server ──────────────────────────────────────────────────
 
-const httpServer = createServer();
+const httpServer = createServer((req, res) => {
+  if (req.url === "/" || req.url === "/health") {
+    res.writeHead(200);
+    res.end("OK");
+  }
+});
+
 const io = new Server(httpServer, {
   cors: {
     origin: process.env.CLIENT_ORIGIN ?? "*",
