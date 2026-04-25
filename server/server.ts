@@ -1,8 +1,52 @@
 import { Server } from "socket.io";
 import { createServer } from "http";
+import { createClient } from "@libsql/client";
 
-const httpServer = createServer();
+const httpServer = createServer((req, res) => {
+  res.writeHead(200);
+  res.end("OK");
+});
 const io = new Server(httpServer, { cors: { origin: "*" } });
+
+// ── Turso DB ──────────────────────────────────────────────────────
+const db = createClient({
+  url: process.env.TURSO_URL!,
+  authToken: process.env.TURSO_TOKEN!,
+});
+
+async function initDB() {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS leaderboard (
+      session_token TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      wins INTEGER DEFAULT 0,
+      losses INTEGER DEFAULT 0
+    )
+  `);
+}
+
+async function recordWin(token: string, name: string) {
+  await db.execute({
+    sql: `INSERT INTO leaderboard (session_token, name, wins, losses) VALUES (?, ?, 1, 0)
+          ON CONFLICT(session_token) DO UPDATE SET wins = wins + 1, name = excluded.name`,
+    args: [token, name],
+  });
+}
+
+async function recordLoss(token: string, name: string) {
+  await db.execute({
+    sql: `INSERT INTO leaderboard (session_token, name, wins, losses) VALUES (?, ?, 0, 1)
+          ON CONFLICT(session_token) DO UPDATE SET losses = losses + 1, name = excluded.name`,
+    args: [token, name],
+  });
+}
+
+async function getLeaderboard(): Promise<LeaderboardEntry[]> {
+  const res = await db.execute(
+    `SELECT session_token as sessionToken, name, wins, losses FROM leaderboard ORDER BY wins DESC, losses ASC LIMIT 20`
+  );
+  return res.rows as unknown as LeaderboardEntry[];
+}
 
 // ── Card types ────────────────────────────────────────────────────
 export type CardId =
@@ -64,7 +108,7 @@ function drawHand(count = 5): CardId[] {
   return hand;
 }
 
-// ── Player / Room types ───────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────
 interface Player {
   socketId: string;
   sessionToken: string;
@@ -86,38 +130,22 @@ interface Player {
 
 interface Room {
   id: string;
-  players: Record<string, Player>; // keyed by sessionToken
-  turn: string | null;             // sessionToken of current turn
+  players: Record<string, Player>;
+  turn: string | null;
   log: string[];
   gameOver: boolean;
   winnerId: string | null;
   lastNarration: string;
 }
 
-// ── Leaderboard ───────────────────────────────────────────────────
 interface LeaderboardEntry {
   sessionToken: string;
   name: string;
   wins: number;
   losses: number;
 }
-const leaderboard: Map<string, LeaderboardEntry> = new Map();
 
-function recordWin(token: string, name: string) {
-  const e = leaderboard.get(token) ?? { sessionToken: token, name, wins: 0, losses: 0 };
-  e.wins++; e.name = name;
-  leaderboard.set(token, e);
-}
-function recordLoss(token: string, name: string) {
-  const e = leaderboard.get(token) ?? { sessionToken: token, name, wins: 0, losses: 0 };
-  e.losses++; e.name = name;
-  leaderboard.set(token, e);
-}
-function getLeaderboard(): LeaderboardEntry[] {
-  return [...leaderboard.values()].sort((a, b) => b.wins - a.wins || a.losses - b.losses);
-}
-
-// ── Rooms map ─────────────────────────────────────────────────────
+// ── Rooms ─────────────────────────────────────────────────────────
 const rooms: Map<string, Room> = new Map();
 
 function getRoom(roomId: string): Room {
@@ -132,7 +160,6 @@ function addLog(room: Room, msg: string) {
   if (room.log.length > 25) room.log.pop();
 }
 
-// ── Broadcast to room ─────────────────────────────────────────────
 function broadcast(room: Room) {
   const tokens = Object.keys(room.players);
   tokens.forEach(myToken => {
@@ -140,14 +167,11 @@ function broadcast(room: Room) {
     if (!p.socketId) return;
     const socket = io.sockets.sockets.get(p.socketId);
     if (!socket) return;
-
-    // Build stripped state — hide opponent's hand
     const strippedPlayers: Record<string, any> = {};
     tokens.forEach(t => {
       const pl = room.players[t];
       strippedPlayers[t] = { ...pl, hand: t === myToken ? pl.hand : pl.hand.map(() => "???") };
     });
-
     socket.emit("stateUpdate", {
       players: strippedPlayers,
       myToken,
@@ -161,12 +185,7 @@ function broadcast(room: Room) {
   });
 }
 
-// ── Game logic ────────────────────────────────────────────────────
-function getOpponent(room: Room, token: string): Player | null {
-  const t = Object.keys(room.players).find(x => x !== token);
-  return t ? room.players[t] : null;
-}
-
+// ── Game helpers ──────────────────────────────────────────────────
 function getOpponentToken(room: Room, token: string): string | null {
   return Object.keys(room.players).find(x => x !== token) ?? null;
 }
@@ -206,14 +225,13 @@ function endGame(room: Room, winnerToken: string) {
   const loserToken = getOpponentToken(room, winnerToken);
   const loser = loserToken ? room.players[loserToken] : null;
   addLog(room, `★ ${winner.name} wins the battle!`);
-  recordWin(winnerToken, winner.name);
-  if (loser) recordLoss(loserToken!, loser.name);
+  recordWin(winnerToken, winner.name).catch(console.error);
+  if (loser) recordLoss(loserToken!, loser.name).catch(console.error);
 }
 
 function startTurn(room: Room, token: string) {
   const player = room.players[token];
   if (!player) return;
-
   if (player.skipNextTurn) {
     player.skipNextTurn = false;
     addLog(room, `😵 ${player.name} is stunned and skips their turn!`);
@@ -221,16 +239,12 @@ function startTurn(room: Room, token: string) {
     if (opp) startTurn(room, opp);
     return;
   }
-
-  // Regen
   if (player.regenStacks > 0) {
     const regen = player.regenStacks * 3;
     player.hp = Math.min(player.maxHp, player.hp + regen);
     addLog(room, `💚 ${player.name} regenerates ${regen} HP!`);
     player.regenStacks = Math.max(0, player.regenStacks - 1);
   }
-
-  // Poison
   if (player.poisoned > 0) {
     player.hp = Math.max(0, player.hp - player.poisoned);
     addLog(room, `☠ ${player.name} takes ${player.poisoned} poison damage!`);
@@ -238,7 +252,6 @@ function startTurn(room: Room, token: string) {
     const oppToken = getOpponentToken(room, token);
     if (player.hp <= 0 && oppToken) { endGame(room, oppToken); return; }
   }
-
   room.turn = token;
 }
 
@@ -248,8 +261,6 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
   if (!targetToken) return;
   const target = room.players[targetToken];
   actor.lastCard = cardId;
-
-  // Remove played card
   const idx = actor.hand.indexOf(cardId);
   if (idx !== -1) actor.hand.splice(idx, 1);
 
@@ -263,7 +274,7 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     }
     case "heavy_blow": {
       const d = dealDamage(room, actor, target, 22, "heavy blow");
-      if (d > 0) { addLog(room, `💥 ${actor.name} landed a HEAVY BLOW for ${d} damage!`); narration = `${actor.name} winds up and SMASHES ${target.name} for ${d} damage! The impact leaves them exhausted...`; }
+      if (d > 0) { addLog(room, `💥 ${actor.name} landed a HEAVY BLOW for ${d} damage!`); narration = `${actor.name} winds up and SMASHES ${target.name} for ${d} damage! They're exhausted after...`; }
       actor.skipNextTurn = true;
       addLog(room, `😵 ${actor.name} is exhausted — skips next turn.`);
       break;
@@ -300,7 +311,7 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     }
     case "cursed_blade": {
       const d = dealDamage(room, actor, target, 40, "cursed blade");
-      if (d > 0) { addLog(room, `🩸 CURSED BLADE — ${d} damage!`); narration = `${actor.name} unleashes the forbidden Cursed Blade, dealing ${d} devastating damage! But the curse binds them in place...`; }
+      if (d > 0) { addLog(room, `🩸 CURSED BLADE — ${d} damage!`); narration = `${actor.name} unleashes the forbidden Cursed Blade, dealing ${d} devastating damage! But the curse binds them...`; }
       actor.skipNextTurn = true;
       addLog(room, `💀 The curse binds ${actor.name} — stunned next turn!`);
       break;
@@ -323,12 +334,12 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       actor.shield = true;
       actor.hp = Math.min(actor.maxHp, actor.hp + 10);
       addLog(room, `✦ ${actor.name} — divine shield + 10 HP!`);
-      narration = `${actor.name} bathes in divine light! A shield forms around them and they recover 10 HP.`;
+      narration = `${actor.name} bathes in divine light! A shield forms and they recover 10 HP.`;
       break;
     }
     case "poison_dart": {
       const d = dealDamage(room, actor, target, 8, "poison dart");
-      if (d > 0) { target.poisoned = 6; addLog(room, `☠ ${actor.name} poisoned ${target.name}! 8 + 6 poison next turn.`); narration = `${actor.name} fires a toxic dart! ${target.name} takes ${d} damage and is now POISONED — 6 more damage incoming next turn.`; }
+      if (d > 0) { target.poisoned = 6; addLog(room, `☠ ${actor.name} poisoned ${target.name}! 8 + 6 poison next turn.`); narration = `${actor.name} fires a toxic dart! ${target.name} takes ${d} damage and is POISONED — 6 more next turn.`; }
       break;
     }
     case "double_strike": {
@@ -343,7 +354,7 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     case "taunt": {
       target.taunted = true;
       addLog(room, `😤 ${actor.name} taunts ${target.name} — draw 1 fewer next turn!`);
-      narration = `${actor.name} hurls insults at ${target.name}, rattling their concentration! They'll draw 1 fewer card next turn.`;
+      narration = `${actor.name} hurls insults at ${target.name}, rattling their concentration! They draw 1 fewer card next turn.`;
       break;
     }
     case "lucky_shot": {
@@ -351,8 +362,9 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       const d = dealDamage(room, actor, target, dmg, "lucky shot");
       if (d > 0) {
         addLog(room, `🍀 LUCKY SHOT — ${d} damage!${d >= 35 ? " INSANE!" : d <= 5 ? " Barely anything..." : ""}`);
-        narration = d >= 35 ? `${actor.name} fires blindly and somehow hits ${target.name} for ${d} INSANE damage! The cosmos has blessed them!`
-          : d <= 5 ? `${actor.name} fires a lucky shot... and barely grazes ${target.name} for ${d} damage. Not so lucky after all.`
+        narration = d >= 35
+          ? `${actor.name} fires blindly and somehow hits ${target.name} for ${d} INSANE damage! Blessed by the cosmos!`
+          : d <= 5 ? `${actor.name} fires a lucky shot... and barely grazes ${target.name} for ${d} damage. Not so lucky.`
           : `${actor.name} fires a lucky shot! ${target.name} takes ${d} damage from pure chance.`;
       }
       break;
@@ -372,7 +384,7 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       if (d > 0) {
         actor.hp = Math.max(0, actor.hp - 5);
         addLog(room, `🌍 EARTHQUAKE — ${d} to foe, 5 self-damage.`);
-        narration = `${actor.name} stamps the cosmic ground and triggers an EARTHQUAKE! ${target.name} takes ${d} damage, but the tremors deal 5 to ${actor.name} too!`;
+        narration = `${actor.name} stamps the cosmic ground — EARTHQUAKE! ${target.name} takes ${d} damage, but tremors deal 5 to ${actor.name} too!`;
       }
       break;
     }
@@ -383,7 +395,7 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
         addLog(room, `🔥 ${actor.name} burned ${target.name}'s ${CARD_NAMES[burned]}!`);
         const d = dealDamage(room, actor, target, 8, "mana burn");
         if (d > 0) addLog(room, `🔥 +${d} damage!`);
-        narration = `${actor.name} ignites ${target.name}'s ${CARD_NAMES[burned]}, destroying it! The magical backlash deals ${d} damage.`;
+        narration = `${actor.name} ignites ${target.name}'s ${CARD_NAMES[burned]}, destroying it! The backlash deals ${d} damage.`;
       } else {
         addLog(room, `🔥 Mana Burn — ${target.name} has no cards!`);
         narration = `${actor.name} tries to burn a card... but ${target.name} has nothing to burn!`;
@@ -400,7 +412,7 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       const ratio = 1 - actor.hp / actor.maxHp;
       const dmg = Math.floor(10 + ratio * 30);
       const d = dealDamage(room, actor, target, dmg, "berserker");
-      if (d > 0) { addLog(room, `😡 BERSERKER — ${d} rage damage!`); narration = `${actor.name} BERSERKS with rage! The lower their HP, the stronger they hit — dealing ${d} furious damage to ${target.name}!`; }
+      if (d > 0) { addLog(room, `😡 BERSERKER — ${d} rage damage!`); narration = `${actor.name} BERSERKS with rage! The lower their HP, the harder they hit — dealing ${d} furious damage to ${target.name}!`; }
       break;
     }
     case "ice_spike": {
@@ -424,19 +436,19 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
         }
       }
       addLog(room, `⚡ LIGHTNING STORM: ${hits.join(", ")}`);
-      narration = `${actor.name} summons a LIGHTNING STORM! Three chaotic bolts strike — ${hits.join(", ")}!`;
+      narration = `${actor.name} summons a LIGHTNING STORM! Three chaotic bolts — ${hits.join(", ")}!`;
       break;
     }
     case "blood_pact": {
       actor.hp = Math.max(0, actor.hp - 15);
       const d = dealDamage(room, actor, target, 35, "blood pact");
-      if (d > 0) { addLog(room, `🩸 BLOOD PACT — −15 HP, dealt ${d}!`); narration = `${actor.name} seals a Blood Pact with dark forces! They sacrifice 15 HP to unleash ${d} devastating damage on ${target.name}!`; }
+      if (d > 0) { addLog(room, `🩸 BLOOD PACT — −15 HP, dealt ${d}!`); narration = `${actor.name} seals a Blood Pact! They sacrifice 15 HP to unleash ${d} devastating damage on ${target.name}!`; }
       break;
     }
     case "reflect": {
       actor.reflectActive = true;
       addLog(room, `🔮 ${actor.name} set up REFLECT — next hit bounces back!`);
-      narration = `${actor.name} conjures a mystic mirror. The next attack against them will be REFLECTED back at the attacker!`;
+      narration = `${actor.name} conjures a mystic mirror. The next attack against them will be REFLECTED back!`;
       break;
     }
     case "meteor": {
@@ -444,7 +456,7 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       if (d > 0) {
         actor.skipNextTurn = true;
         addLog(room, `☄ METEOR — ${d} damage! Stunned after.`);
-        narration = `${actor.name} calls down a METEOR from the cosmos! ${target.name} takes ${d} catastrophic damage! But the effort stuns ${actor.name}...`;
+        narration = `${actor.name} calls down a METEOR! ${target.name} takes ${d} catastrophic damage! The effort stuns ${actor.name}...`;
       }
       break;
     }
@@ -458,19 +470,14 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     case "regen": {
       actor.regenStacks = Math.min(actor.regenStacks + 3, 5);
       addLog(room, `💚 ${actor.name} activated REGEN — ${actor.regenStacks * 3} HP/turn!`);
-      narration = `${actor.name} channels cosmic energy into their body, activating REGEN! They'll recover ${actor.regenStacks * 3} HP at the start of each turn for 3 turns.`;
+      narration = `${actor.name} channels cosmic energy, activating REGEN! They'll recover ${actor.regenStacks * 3} HP per turn for 3 turns.`;
       break;
     }
   }
 
   room.lastNarration = narration;
-
   if (checkDeath(room, actorToken, targetToken)) { broadcast(room); return; }
-
-  // Replenish 1 card
   replenishCard(actor);
-
-  // Extra turn?
   if (actor.extraTurn) {
     actor.extraTurn = false;
     addLog(room, `⏳ ${actor.name} takes an EXTRA TURN!`);
@@ -478,18 +485,15 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
   } else {
     startTurn(room, targetToken);
   }
-
   broadcast(room);
 }
 
 // ── Socket events ─────────────────────────────────────────────────
 io.on("connection", socket => {
-
   socket.on("joinRoom", ({ roomId, sessionToken, preferredName }: { roomId: string; sessionToken: string; preferredName: string }) => {
     const room = getRoom(roomId);
     const tokens = Object.keys(room.players);
 
-    // Reconnect existing player
     if (room.players[sessionToken]) {
       const player = room.players[sessionToken];
       player.socketId = socket.id;
@@ -500,25 +504,17 @@ io.on("connection", socket => {
       return;
     }
 
-    // Room full
-    if (tokens.length >= 2) {
-      socket.emit("roomFull");
-      return;
-    }
+    if (tokens.length >= 2) { socket.emit("roomFull"); return; }
 
-    // New player
     const player: Player = {
-      socketId: socket.id,
-      sessionToken,
+      socketId: socket.id, sessionToken,
       name: preferredName.slice(0, 16),
       hp: 100, maxHp: 100,
       shield: false, reflectActive: false,
       poisoned: 0, regenStacks: 0,
       skipNextTurn: false, taunted: false, extraTurn: false,
-      lastCard: null,
-      hand: drawHand(5),
-      rematchReady: false,
-      connected: true,
+      lastCard: null, hand: drawHand(5),
+      rematchReady: false, connected: true,
     };
 
     room.players[sessionToken] = player;
@@ -531,18 +527,15 @@ io.on("connection", socket => {
       room.turn = Object.keys(room.players)[0];
       addLog(room, "★ THE BATTLE BEGINS!");
     }
-
     broadcast(room);
   });
 
   socket.on("playCard", (cardId: CardId) => {
-    // Find which room+player this socket belongs to
     for (const room of rooms.values()) {
       const token = Object.keys(room.players).find(t => room.players[t].socketId === socket.id);
       if (!token) continue;
       if (room.gameOver || room.turn !== token) return;
-      const player = room.players[token];
-      if (!player.hand.includes(cardId)) return;
+      if (!room.players[token].hand.includes(cardId)) return;
       resolveCard(room, token, cardId);
       return;
     }
@@ -553,14 +546,10 @@ io.on("connection", socket => {
       const token = Object.keys(room.players).find(t => room.players[t].socketId === socket.id);
       if (!token) continue;
       if (room.gameOver) return;
-      const player = room.players[token];
       const oppToken = Object.keys(room.players).find(t => t !== token);
-      addLog(room, `${player.name} forfeited!`);
-      if (oppToken) {
-        endGame(room, oppToken);
-      } else {
-        room.gameOver = true;
-      }
+      addLog(room, `${room.players[token].name} forfeited!`);
+      if (oppToken) endGame(room, oppToken);
+      else room.gameOver = true;
       broadcast(room);
       return;
     }
@@ -571,24 +560,18 @@ io.on("connection", socket => {
       const token = Object.keys(room.players).find(t => room.players[t].socketId === socket.id);
       if (!token || !room.gameOver) continue;
       room.players[token].rematchReady = true;
-
       const tokens = Object.keys(room.players);
       if (tokens.length === 2 && tokens.every(t => room.players[t].rematchReady)) {
-        // Reset game
         tokens.forEach(t => {
           const p = room.players[t];
           p.hp = 100; p.maxHp = 100;
           p.shield = false; p.reflectActive = false;
           p.poisoned = 0; p.regenStacks = 0;
           p.skipNextTurn = false; p.taunted = false; p.extraTurn = false;
-          p.lastCard = null;
-          p.hand = drawHand(5);
-          p.rematchReady = false;
+          p.lastCard = null; p.hand = drawHand(5); p.rematchReady = false;
         });
-        room.gameOver = false;
-        room.winnerId = null;
-        room.log = [];
-        room.lastNarration = "";
+        room.gameOver = false; room.winnerId = null;
+        room.log = []; room.lastNarration = "";
         room.turn = tokens[Math.floor(Math.random() * 2)];
         addLog(room, "★ REMATCH — FIGHT!");
       }
@@ -597,8 +580,8 @@ io.on("connection", socket => {
     }
   });
 
-  socket.on("getLeaderboard", () => {
-    socket.emit("leaderboard", getLeaderboard());
+  socket.on("getLeaderboard", async () => {
+    socket.emit("leaderboard", await getLeaderboard());
   });
 
   socket.on("setName", (name: string) => {
@@ -620,11 +603,11 @@ io.on("connection", socket => {
   });
 });
 
-httpServer.on("request", (req, res) => {
-  res.writeHead(200);
-  res.end("OK");
+// ── Start ─────────────────────────────────────────────────────────
+initDB().then(() => {
+  const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+  httpServer.listen(PORT, () => console.log(`✅ Server running on :${PORT}`));
+}).catch(err => {
+  console.error("Failed to init DB:", err);
+  process.exit(1);
 });
-
-httpServer.listen(process.env.PORT ? parseInt(process.env.PORT) : 3000, () =>
-  console.log("✅ Server running")
-);
