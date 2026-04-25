@@ -365,14 +365,16 @@ io.on("connection", socket => {
       const room = rooms.get(existingRoomId);
       if (room && room.players[sessionToken]) {
         const player = room.players[sessionToken];
-        room.socketToSession[socket.id] = sessionToken;
+        // Clean up old socket mapping
         delete room.socketToSession[player.id];
+        // Map new socket
+        room.socketToSession[socket.id] = sessionToken;
         player.id = socket.id;
         player.connected = true;
         socket.join(existingRoomId);
         addLog(room, `🔄 ${player.name} reconnected!`);
         broadcastRoom(room);
-        return;
+       return;
       }
     }
 
