@@ -94,7 +94,9 @@ const DRAW_POOL: CardId[] = [
 
 function drawOne(exclude: CardId[] = []): CardId {
   const pool = DRAW_POOL.filter(c => !exclude.includes(c));
-  return pool[Math.floor(Math.random() * pool.length)];
+  // If somehow all cards excluded, draw from full pool
+  const source = pool.length > 0 ? pool : DRAW_POOL;
+  return source[Math.floor(Math.random() * source.length)];
 }
 
 function drawHand(count = 5): CardId[] {
@@ -132,6 +134,8 @@ interface Room {
   log: string[];
   gameOver: boolean;
   winnerId: string | null;
+  // Narration: the latest human-readable sentence describing what just happened
+  lastNarration: string;
 }
 
 const rooms = new Map<string, Room>();
@@ -152,8 +156,18 @@ function getOpponent(room: Room, sessionToken: string): Player | undefined {
   return getPlayers(room).find(p => p.sessionToken !== sessionToken);
 }
 
+// ── FIX: always ensure the player has at least 1 card after playing.
+// Taunt only skips the *extra* replenish draw — it does NOT starve the hand.
+// This prevents the softlock where repeated taunts leave a player with 0 cards.
 function replenishCard(player: Player) {
-  if (player.taunted) { player.taunted = false; return; }
+  if (player.taunted) {
+    player.taunted = false;
+    // Still guarantee a minimum hand of 1 so the game can never softlock
+    if (player.hand.length === 0) {
+      player.hand.push(drawOne(player.hand));
+    }
+    return;
+  }
   player.hand.push(drawOne(player.hand));
 }
 
@@ -172,6 +186,7 @@ function broadcastRoom(room: Room) {
       players: sanitisedPlayers, myToken,
       turn: room.turn, log: room.log,
       gameOver: room.gameOver, winnerId: room.winnerId, roomId: room.id,
+      lastNarration: room.lastNarration,
     });
   });
 }
@@ -227,6 +242,7 @@ async function endGame(room: Room, loserToken: string) {
   room.winnerId = winnerToken;
   const winner = room.players[winnerToken];
   const loser = room.players[loserToken];
+  room.lastNarration = `${winner.name} defeated ${loser.name}. The battle is over!`;
   addLog(room, `★ ${winner.name} wins the battle!`);
   try {
     await upsertWin(winnerToken, winner.name);
@@ -292,32 +308,240 @@ async function resolveCard(room: Room, actorToken: string, cardId: CardId) {
   const idx = actor.hand.indexOf(cardId);
   if (idx !== -1) actor.hand.splice(idx, 1);
 
+  // Set a default narration — each case overrides with something more specific
+  room.lastNarration = `${actor.name} played ${CARD_DEFS[cardId]?.name ?? cardId}.`;
+
   switch (cardId) {
-    case "slash": { const d = dealDamage(actor, target, 15, "slash", room); if (d > 0) addLog(room, `⚔ ${actor.name} slashed ${target.name} for ${d} damage!`); break; }
-    case "heavy_blow": { const d = dealDamage(actor, target, 22, "heavy blow", room); if (d > 0) addLog(room, `💥 ${actor.name} landed a HEAVY BLOW for ${d} damage!`); actor.skipNextTurn = true; addLog(room, `😵 ${actor.name} is exhausted — skips next turn.`); break; }
-    case "weak_jab": { const d = dealDamage(actor, target, 5, "weak jab", room); if (d > 0) addLog(room, `👊 ${actor.name} threw a weak jab for ${d} damage.`); break; }
-    case "heal": { const before = actor.hp; actor.hp = Math.min(actor.maxHp, actor.hp + 20); addLog(room, `♥ ${actor.name} healed for ${actor.hp - before} HP!`); break; }
-    case "shield": { actor.shield = true; addLog(room, `🛡 ${actor.name} raised a shield!`); break; }
-    case "gamble": { if (Math.random() < 0.5) { const d = dealDamage(actor, target, 30, "gamble", room); if (d > 0) addLog(room, `🎲 ${actor.name} GAMBLED AND WON — ${d} damage!`); } else { actor.hp = Math.max(0, actor.hp - 15); addLog(room, `🎲 ${actor.name} gambled and LOST — took 15 self-damage!`); } break; }
-    case "cursed_blade": { const d = dealDamage(actor, target, 40, "cursed blade", room); if (d > 0) addLog(room, `🩸 ${actor.name} unleashed CURSED BLADE — ${d} damage!`); actor.skipNextTurn = true; addLog(room, `💀 The curse binds ${actor.name} — stunned!`); break; }
-    case "steal": { if (!target.lastCard || target.lastCard === "steal") { addLog(room, `🪞 Nothing to mirror!`); } else { addLog(room, `🪞 ${actor.name} mirrors ${CARD_DEFS[target.lastCard].name}!`); actor.hand.unshift(target.lastCard); await resolveCard(room, actorToken, target.lastCard); return; } break; }
-    case "divine_shield": { actor.shield = true; actor.hp = Math.min(actor.maxHp, actor.hp + 10); addLog(room, `✦ ${actor.name} calls divine protection — shield + 10 HP!`); break; }
-    case "poison_dart": { const d = dealDamage(actor, target, 8, "poison dart", room); if (d > 0) { target.poisoned = 6; addLog(room, `☠ ${actor.name} poisoned ${target.name}! 8 DMG + 6 poison.`); } break; }
-    case "double_strike": { let total = 0; for (let i = 0; i < 2; i++) { const d = dealDamage(actor, target, 12, `strike ${i+1}`, room); if (d > 0) total += d; else break; } if (total > 0) addLog(room, `⚡ ${actor.name} struck TWICE for ${total} total!`); break; }
-    case "taunt": { target.taunted = true; addLog(room, `😤 ${actor.name} taunts ${target.name} — skip next draw!`); break; }
-    case "lucky_shot": { const dmg = Math.floor(Math.random() * 40) + 1; const d = dealDamage(actor, target, dmg, "lucky shot", room); if (d > 0) addLog(room, `🍀 LUCKY SHOT hits for ${d}!${d >= 35 ? " INSANE!" : d <= 5 ? " Barely a scratch..." : ""}`); break; }
-    case "vampire_bite": { const d = dealDamage(actor, target, 14, "vampire bite", room); if (d > 0) { const ls = Math.floor(d/2); actor.hp = Math.min(actor.maxHp, actor.hp + ls); addLog(room, `🧛 ${actor.name} drained ${d} HP and healed ${ls}!`); } break; }
-    case "earthquake": { const d = dealDamage(actor, target, 20, "earthquake", room); if (d > 0) { actor.hp = Math.max(0, actor.hp - 5); addLog(room, `🌍 EARTHQUAKE! ${d} to foe, 5 self-damage.`); } break; }
-    case "mana_burn": { if (target.hand.length > 0) { const bi = Math.floor(Math.random() * target.hand.length); const burned = target.hand.splice(bi, 1)[0]; addLog(room, `🔥 ${actor.name} burned ${CARD_DEFS[burned]?.name ?? "card"}!`); const d = dealDamage(actor, target, 8, "mana burn", room); if (d > 0) addLog(room, `🔥 ...and dealt ${d} damage!`); } else { addLog(room, `🔥 Mana Burn failed!`); } break; }
-    case "time_warp": { actor.extraTurn = true; addLog(room, `⏳ ${actor.name} bends time — extra turn!`); break; }
-    case "berserker": { const ratio = 1 - actor.hp / actor.maxHp; const dmg = Math.floor(10 + ratio * 30); const d = dealDamage(actor, target, dmg, "berserker", room); if (d > 0) addLog(room, `😡 ${actor.name} BERSERKS for ${d}!`); break; }
-    case "ice_spike": { const d = dealDamage(actor, target, 12, "ice spike", room); if (d > 0) { target.skipNextTurn = true; addLog(room, `🧊 ICE SPIKE — ${d} DMG + stun!`); } break; }
-    case "lightning_storm": { const hits: string[] = []; for (let i = 0; i < 3; i++) { if (Math.random() < 0.65) { const d = dealDamage(actor, target, 10, "lightning", room); hits.push(d > 0 ? `${d} to foe` : "blocked!"); } else { actor.hp = Math.max(0, actor.hp - 5); hits.push(`5 backfire!`); } } addLog(room, `⚡ LIGHTNING STORM: ${hits.join(", ")}`); break; }
-    case "blood_pact": { actor.hp = Math.max(0, actor.hp - 15); const d = dealDamage(actor, target, 35, "blood pact", room); if (d > 0) addLog(room, `🩸 BLOOD PACT — sacrificed 15, dealt ${d}!`); break; }
-    case "reflect": { actor.reflectActive = true; addLog(room, `🔮 ${actor.name} set REFLECT!`); break; }
-    case "meteor": { const d = dealDamage(actor, target, 50, "meteor", room); if (d > 0) { actor.skipNextTurn = true; addLog(room, `☄ METEOR — ${d} damage! Stunned after.`); } break; }
-    case "ghost_step": { actor.shield = true; const d = dealDamage(actor, target, 8, "ghost counter", room); addLog(room, `👻 Ghost step — shield + ${d > 0 ? d + " counter" : "blocked"}!`); break; }
-    case "regen": { actor.regenStacks = Math.min(actor.regenStacks + 3, 5); addLog(room, `💚 REGEN — heals ${actor.regenStacks * 3}/turn!`); break; }
+    case "slash": {
+      const d = dealDamage(actor, target, 15, "slash", room);
+      if (d > 0) { addLog(room, `⚔ ${actor.name} slashed ${target.name} for ${d} damage!`); room.lastNarration = `${actor.name} slashed ${target.name} for ${d} damage.`; }
+      else room.lastNarration = `${actor.name} slashed but ${target.name} blocked it!`;
+      break;
+    }
+    case "heavy_blow": {
+      const d = dealDamage(actor, target, 22, "heavy blow", room);
+      if (d > 0) { addLog(room, `💥 ${actor.name} landed a HEAVY BLOW for ${d} damage!`); room.lastNarration = `${actor.name} landed a Heavy Blow on ${target.name} for ${d} damage — but is now exhausted.`; }
+      else room.lastNarration = `${actor.name} swung heavy but ${target.name}'s shield took it.`;
+      actor.skipNextTurn = true;
+      addLog(room, `😵 ${actor.name} is exhausted — skips next turn.`);
+      break;
+    }
+    case "weak_jab": {
+      const d = dealDamage(actor, target, 5, "weak jab", room);
+      if (d > 0) { addLog(room, `👊 ${actor.name} threw a weak jab for ${d} damage.`); room.lastNarration = `${actor.name} threw a weak jab at ${target.name} for ${d} damage.`; }
+      else room.lastNarration = `${actor.name} jabbed but ${target.name} shrugged it off.`;
+      break;
+    }
+    case "heal": {
+      const before = actor.hp;
+      actor.hp = Math.min(actor.maxHp, actor.hp + 20);
+      const gained = actor.hp - before;
+      addLog(room, `♥ ${actor.name} healed for ${gained} HP!`);
+      room.lastNarration = `${actor.name} mended their wounds, recovering ${gained} HP.`;
+      break;
+    }
+    case "shield": {
+      actor.shield = true;
+      addLog(room, `🛡 ${actor.name} raised a shield!`);
+      room.lastNarration = `${actor.name} raised an Iron Shield — the next hit will be blocked.`;
+      break;
+    }
+    case "gamble": {
+      if (Math.random() < 0.5) {
+        const d = dealDamage(actor, target, 30, "gamble", room);
+        if (d > 0) { addLog(room, `🎲 ${actor.name} GAMBLED AND WON — ${d} damage!`); room.lastNarration = `${actor.name} gambled and won! ${target.name} took ${d} damage.`; }
+        else room.lastNarration = `${actor.name} gambled but ${target.name}'s shield blocked it.`;
+      } else {
+        actor.hp = Math.max(0, actor.hp - 15);
+        addLog(room, `🎲 ${actor.name} gambled and LOST — took 15 self-damage!`);
+        room.lastNarration = `${actor.name} gambled and lost — took 15 damage to themselves.`;
+      }
+      break;
+    }
+    case "cursed_blade": {
+      const d = dealDamage(actor, target, 40, "cursed blade", room);
+      if (d > 0) { addLog(room, `🩸 ${actor.name} unleashed CURSED BLADE — ${d} damage!`); room.lastNarration = `${actor.name} unleashed the Cursed Blade for ${d} damage — but is now stunned.`; }
+      else room.lastNarration = `${actor.name} swung the Cursed Blade but ${target.name}'s shield held.`;
+      actor.skipNextTurn = true;
+      addLog(room, `💀 The curse binds ${actor.name} — stunned!`);
+      break;
+    }
+    case "steal": {
+      if (!target.lastCard || target.lastCard === "steal") {
+        addLog(room, `🪞 Nothing to mirror!`);
+        room.lastNarration = `${actor.name} tried Mirror Strike but there was nothing to copy.`;
+      } else {
+        addLog(room, `🪞 ${actor.name} mirrors ${CARD_DEFS[target.lastCard].name}!`);
+        room.lastNarration = `${actor.name} mirrored ${target.name}'s ${CARD_DEFS[target.lastCard].name}!`;
+        actor.hand.unshift(target.lastCard);
+        await resolveCard(room, actorToken, target.lastCard);
+        return;
+      }
+      break;
+    }
+    case "divine_shield": {
+      actor.shield = true;
+      actor.hp = Math.min(actor.maxHp, actor.hp + 10);
+      addLog(room, `✦ ${actor.name} calls divine protection — shield + 10 HP!`);
+      room.lastNarration = `${actor.name} called upon divine protection — shielded and healed 10 HP.`;
+      break;
+    }
+    case "poison_dart": {
+      const d = dealDamage(actor, target, 8, "poison dart", room);
+      if (d > 0) {
+        target.poisoned = 6;
+        addLog(room, `☠ ${actor.name} poisoned ${target.name}! 8 DMG + 6 poison.`);
+        room.lastNarration = `${actor.name} hit ${target.name} with a Poison Dart — 8 damage and 6 poison next turn.`;
+      } else {
+        room.lastNarration = `${actor.name} threw a Poison Dart but ${target.name}'s shield caught it.`;
+      }
+      break;
+    }
+    case "double_strike": {
+      let total = 0;
+      for (let i = 0; i < 2; i++) {
+        const d = dealDamage(actor, target, 12, `strike ${i+1}`, room);
+        if (d > 0) total += d; else break;
+      }
+      if (total > 0) { addLog(room, `⚡ ${actor.name} struck TWICE for ${total} total!`); room.lastNarration = `${actor.name} struck ${target.name} twice for ${total} total damage.`; }
+      else room.lastNarration = `${actor.name} double-struck but ${target.name} blocked it.`;
+      break;
+    }
+    case "taunt": {
+      target.taunted = true;
+      addLog(room, `😤 ${actor.name} taunts ${target.name} — skip next draw!`);
+      room.lastNarration = `${actor.name} taunted ${target.name} — they'll skip their next card draw.`;
+      break;
+    }
+    case "lucky_shot": {
+      const dmg = Math.floor(Math.random() * 40) + 1;
+      const d = dealDamage(actor, target, dmg, "lucky shot", room);
+      if (d > 0) {
+        addLog(room, `🍀 LUCKY SHOT hits for ${d}!${d >= 35 ? " INSANE!" : d <= 5 ? " Barely a scratch..." : ""}`);
+        room.lastNarration = `${actor.name}'s Lucky Shot hit ${target.name} for ${d} damage.${d >= 35 ? " Incredible!" : d <= 5 ? " Barely anything." : ""}`;
+      } else {
+        room.lastNarration = `${actor.name}'s Lucky Shot was blocked by ${target.name}'s shield.`;
+      }
+      break;
+    }
+    case "vampire_bite": {
+      const d = dealDamage(actor, target, 14, "vampire bite", room);
+      if (d > 0) {
+        const ls = Math.floor(d/2);
+        actor.hp = Math.min(actor.maxHp, actor.hp + ls);
+        addLog(room, `🧛 ${actor.name} drained ${d} HP and healed ${ls}!`);
+        room.lastNarration = `${actor.name} bit ${target.name} for ${d} damage and drained ${ls} HP for themselves.`;
+      } else {
+        room.lastNarration = `${actor.name} tried to bite but ${target.name}'s shield protected them.`;
+      }
+      break;
+    }
+    case "earthquake": {
+      const d = dealDamage(actor, target, 20, "earthquake", room);
+      if (d > 0) {
+        actor.hp = Math.max(0, actor.hp - 5);
+        addLog(room, `🌍 EARTHQUAKE! ${d} to foe, 5 self-damage.`);
+        room.lastNarration = `${actor.name} caused an Earthquake — ${d} damage to ${target.name}, 5 to themselves.`;
+      } else {
+        room.lastNarration = `${actor.name} shook the ground but ${target.name}'s shield held.`;
+      }
+      break;
+    }
+    case "mana_burn": {
+      if (target.hand.length > 0) {
+        const bi = Math.floor(Math.random() * target.hand.length);
+        const burned = target.hand.splice(bi, 1)[0];
+        addLog(room, `🔥 ${actor.name} burned ${CARD_DEFS[burned]?.name ?? "card"}!`);
+        const d = dealDamage(actor, target, 8, "mana burn", room);
+        if (d > 0) addLog(room, `🔥 ...and dealt ${d} damage!`);
+        room.lastNarration = `${actor.name} burned ${target.name}'s ${CARD_DEFS[burned]?.name ?? "card"} and dealt 8 damage.`;
+      } else {
+        addLog(room, `🔥 Mana Burn failed — ${target.name} has no cards!`);
+        room.lastNarration = `${actor.name} tried Mana Burn but ${target.name} had no cards to burn.`;
+      }
+      break;
+    }
+    case "time_warp": {
+      actor.extraTurn = true;
+      addLog(room, `⏳ ${actor.name} bends time — extra turn!`);
+      room.lastNarration = `${actor.name} warped time and is taking an extra turn!`;
+      break;
+    }
+    case "berserker": {
+      const ratio = 1 - actor.hp / actor.maxHp;
+      const dmg = Math.floor(10 + ratio * 30);
+      const d = dealDamage(actor, target, dmg, "berserker", room);
+      if (d > 0) { addLog(room, `😡 ${actor.name} BERSERKS for ${d}!`); room.lastNarration = `${actor.name} went berserk — the lower their HP, the harder they hit. Dealt ${d} damage!`; }
+      else room.lastNarration = `${actor.name} went berserk but ${target.name}'s shield absorbed it.`;
+      break;
+    }
+    case "ice_spike": {
+      const d = dealDamage(actor, target, 12, "ice spike", room);
+      if (d > 0) {
+        target.skipNextTurn = true;
+        addLog(room, `🧊 ICE SPIKE — ${d} DMG + stun!`);
+        room.lastNarration = `${actor.name} hit ${target.name} with an Ice Spike for ${d} damage — they're now stunned.`;
+      } else {
+        room.lastNarration = `${actor.name} launched an Ice Spike but ${target.name}'s shield blocked it.`;
+      }
+      break;
+    }
+    case "lightning_storm": {
+      const hits: string[] = [];
+      let totalToFoe = 0;
+      let totalBackfire = 0;
+      for (let i = 0; i < 3; i++) {
+        if (Math.random() < 0.65) {
+          const d = dealDamage(actor, target, 10, "lightning", room);
+          hits.push(d > 0 ? `${d} to foe` : "blocked!");
+          if (d > 0) totalToFoe += d;
+        } else {
+          actor.hp = Math.max(0, actor.hp - 5);
+          hits.push(`5 backfire!`);
+          totalBackfire += 5;
+        }
+      }
+      addLog(room, `⚡ LIGHTNING STORM: ${hits.join(", ")}`);
+      room.lastNarration = `${actor.name} unleashed a Lightning Storm — ${totalToFoe} damage to ${target.name}${totalBackfire > 0 ? `, ${totalBackfire} backfired` : ""}.`;
+      break;
+    }
+    case "blood_pact": {
+      actor.hp = Math.max(0, actor.hp - 15);
+      const d = dealDamage(actor, target, 35, "blood pact", room);
+      if (d > 0) { addLog(room, `🩸 BLOOD PACT — sacrificed 15, dealt ${d}!`); room.lastNarration = `${actor.name} made a Blood Pact — sacrificed 15 HP to deal ${d} damage to ${target.name}.`; }
+      else room.lastNarration = `${actor.name} made a Blood Pact but ${target.name}'s shield blocked it.`;
+      break;
+    }
+    case "reflect": {
+      actor.reflectActive = true;
+      addLog(room, `🔮 ${actor.name} set REFLECT!`);
+      room.lastNarration = `${actor.name} set up Reflect — the next attack will be bounced back.`;
+      break;
+    }
+    case "meteor": {
+      const d = dealDamage(actor, target, 50, "meteor", room);
+      if (d > 0) {
+        actor.skipNextTurn = true;
+        addLog(room, `☄ METEOR — ${d} damage! Stunned after.`);
+        room.lastNarration = `${actor.name} called down a Meteor for ${d} massive damage — but is stunned afterward.`;
+      } else {
+        room.lastNarration = `${actor.name} dropped a Meteor but ${target.name}'s shield took the hit.`;
+      }
+      break;
+    }
+    case "ghost_step": {
+      actor.shield = true;
+      const d = dealDamage(actor, target, 8, "ghost counter", room);
+      addLog(room, `👻 Ghost step — shield + ${d > 0 ? d + " counter" : "blocked"}!`);
+      room.lastNarration = `${actor.name} ghost-stepped — shielded up and countered ${target.name} for ${d > 0 ? d + " damage" : "0 (blocked)"}.`;
+      break;
+    }
+    case "regen": {
+      actor.regenStacks = Math.min(actor.regenStacks + 3, 5);
+      addLog(room, `💚 REGEN — heals ${actor.regenStacks * 3}/turn!`);
+      room.lastNarration = `${actor.name} activated Regen — recovering ${actor.regenStacks * 3} HP per turn.`;
+      break;
+    }
   }
 
   if (await checkDeath(room, actorToken, target.sessionToken)) { broadcastRoom(room); return; }
@@ -359,28 +583,25 @@ function findSessionBySocket(socketId: string): string | undefined {
 io.on("connection", socket => {
 
   socket.on("joinRoom", async ({ roomId, sessionToken, preferredName }: { roomId: string; sessionToken: string; preferredName?: string }) => {
-    // Reconnect existing session
     const existingRoomId = sessionToRoom.get(sessionToken);
     if (existingRoomId) {
       const room = rooms.get(existingRoomId);
       if (room && room.players[sessionToken]) {
         const player = room.players[sessionToken];
-        // Clean up old socket mapping
         delete room.socketToSession[player.id];
-        // Map new socket
         room.socketToSession[socket.id] = sessionToken;
         player.id = socket.id;
         player.connected = true;
         socket.join(existingRoomId);
         addLog(room, `🔄 ${player.name} reconnected!`);
         broadcastRoom(room);
-       return;
+        return;
       }
     }
 
     let room = rooms.get(roomId);
     if (!room) {
-      room = { id: roomId, players: {}, socketToSession: {}, turn: null, log: [], gameOver: false, winnerId: null };
+      room = { id: roomId, players: {}, socketToSession: {}, turn: null, log: [], gameOver: false, winnerId: null, lastNarration: "" };
       rooms.set(roomId, room);
     }
     if (Object.keys(room.players).length >= 2) { socket.emit("roomFull"); return; }
@@ -406,22 +627,21 @@ io.on("connection", socket => {
     if (Object.keys(room.players).length === 2) {
       room.gameOver = false; room.winnerId = null;
       room.turn = Object.keys(room.players)[0];
+      room.lastNarration = "The battle begins! First move is yours.";
       addLog(room, "★ THE BATTLE BEGINS!");
     }
     broadcastRoom(room);
   });
 
-socket.on("playCard", (cardId: CardId) => {
+  socket.on("playCard", (cardId: CardId) => {
     const sessionToken = findSessionBySocket(socket.id);
-    console.log("playCard received:", cardId, "socketId:", socket.id, "sessionToken:", sessionToken);
-    if (!sessionToken) { console.log("BLOCKED: no sessionToken"); return; }
+    if (!sessionToken) return;
     const roomId = sessionToRoom.get(sessionToken);
-    if (!roomId) { console.log("BLOCKED: no roomId"); return; }
+    if (!roomId) return;
     const room = rooms.get(roomId);
-    console.log("turn:", room?.turn, "sessionToken:", sessionToken, "match:", room?.turn === sessionToken);
-    if (!room || room.gameOver || room.turn !== sessionToken) { console.log("BLOCKED: not your turn or game over"); return; }
+    if (!room || room.gameOver || room.turn !== sessionToken) return;
     const player = room.players[sessionToken];
-    if (!player || !player.hand.includes(cardId)) { console.log("BLOCKED: card not in hand"); return; }
+    if (!player || !player.hand.includes(cardId)) return;
     resolveCard(room, sessionToken, cardId);
   });
 
@@ -443,6 +663,7 @@ socket.on("playCard", (cardId: CardId) => {
       });
       room.log = []; room.gameOver = false; room.winnerId = null;
       room.turn = Object.keys(room.players)[0];
+      room.lastNarration = "Rematch started! Fight!";
       addLog(room, "★ REMATCH BEGINS!");
     }
     broadcastRoom(room);
@@ -465,6 +686,17 @@ socket.on("playCard", (cardId: CardId) => {
   socket.on("getLeaderboard", async () => {
     try { socket.emit("leaderboard", await getLeaderboard()); }
     catch { socket.emit("leaderboard", []); }
+  });
+
+  socket.on("forfeit", async () => {
+    const sessionToken = findSessionBySocket(socket.id);
+    if (!sessionToken) return;
+    const roomId = sessionToRoom.get(sessionToken);
+    if (!roomId) return;
+    const room = rooms.get(roomId);
+    if (!room || room.gameOver) return;
+    await endGame(room, sessionToken);
+    broadcastRoom(room);
   });
 
   socket.on("disconnect", () => {

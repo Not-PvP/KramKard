@@ -51,6 +51,7 @@ interface GameState {
   gameOver: boolean;
   winnerId: string | null;
   roomId: string;
+  lastNarration: string;
 }
 
 interface LeaderboardEntry {
@@ -330,9 +331,107 @@ function ShareLink({ roomId }: { roomId: string }) {
   );
 }
 
+// ─── Inactivity warning overlay ───────────────────────────────────────────────
+
+function InactivityWarning({ secondsLeft, onStayIn, onLeave }: { secondsLeft: number; onStayIn: () => void; onLeave: () => void }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Press Start 2P', monospace" }}>
+      <div style={{ background: "#080810", border: "2px solid #fc5c65", padding: "28px 32px", textAlign: "center", maxWidth: 320 }}>
+        <div style={{ fontSize: 8, color: "#fc5c65", letterSpacing: 2, marginBottom: 12, animation: "blink 0.8s step-end infinite" }}>⚠ GAME STALLED ⚠</div>
+        <div style={{ fontSize: 6, color: "#aaa", lineHeight: 2, marginBottom: 20 }}>
+          No activity detected.<br />Auto-aborting in {secondsLeft}s...
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <button onClick={onStayIn} style={{ background: "transparent", border: "1px solid #26de81", color: "#26de81", padding: "8px 14px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}>
+            STAY IN
+          </button>
+          <button onClick={onLeave} style={{ background: "transparent", border: "1px solid #fc5c65", color: "#fc5c65", padding: "8px 14px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}>
+            ABORT
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Narration panel (left side) ─────────────────────────────────────────────
+
+function NarrationPanel({ text }: { text: string }) {
+  const [displayed, setDisplayed] = useState("");
+  const [key, setKey] = useState(0);
+
+  // Typewriter effect — re-runs whenever text changes
+  useEffect(() => {
+    if (!text) return;
+    setDisplayed("");
+    setKey(k => k + 1);
+    let i = 0;
+    const interval = setInterval(() => {
+      i++;
+      setDisplayed(text.slice(0, i));
+      if (i >= text.length) clearInterval(interval);
+    }, 28);
+    return () => clearInterval(interval);
+  }, [text]);
+
+  if (!text) return null;
+
+  return (
+    <div style={{
+      position: "fixed",
+      left: 14,
+      top: 70,
+      width: 210,
+      background: "#060610",
+      border: "2px solid #1a1a2e",
+      borderTop: "2px solid #f9ca24",
+      fontFamily: "'Press Start 2P', monospace",
+      zIndex: 10,
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: "7px 9px",
+        borderBottom: "1px solid #1a1a2e",
+        fontSize: 6,
+        color: "#f9ca24",
+        letterSpacing: 2,
+        background: "#0a0a18",
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+      }}>
+        <span style={{ animation: "blink 2s step-end infinite" }}>▐</span> LAST MOVE
+      </div>
+
+      {/* Narration text */}
+      <div style={{ padding: "12px 10px 14px" }}>
+        <div style={{
+          fontSize: 7,
+          color: "#e0e0e0",
+          lineHeight: 2.2,
+          letterSpacing: 0.3,
+          minHeight: 60,
+        }}>
+          {displayed}
+          <span style={{ animation: "blink 0.6s step-end infinite", color: "#f9ca24" }}>_</span>
+        </div>
+      </div>
+
+      {/* Decorative bottom strip */}
+      <div style={{ padding: "3px 9px 7px", display: "flex", gap: 3 }}>
+        {["#f9ca24","#fc5c65","#26de81","#45aaf2","#a55eea"].map((c, i) => (
+          <div key={i} style={{ width: 5, height: 5, background: c, opacity: 0.5 }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 
-// Socket created ONCE at module level — this is correct
+const INACTIVITY_MS = 3 * 60 * 1000;
+const WARNING_COUNTDOWN_S = 15;
+
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3000";
 const socket: Socket = io(SERVER_URL, {
   transports: ["websocket", "polling"],
@@ -340,7 +439,7 @@ const socket: Socket = io(SERVER_URL, {
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
   timeout: 20000,
-  autoConnect: false, // ← KEY FIX: don't connect until we have session info
+  autoConnect: false,
 });
 
 export default function App() {
@@ -351,22 +450,75 @@ export default function App() {
   const [nameSet, setNameSet] = useState(false);
   const [roomFull, setRoomFull] = useState(false);
 
+  const [showInactivityWarning, setShowInactivityWarning] = useState(false);
+  const [warningCountdown, setWarningCountdown] = useState(WARNING_COUNTDOWN_S);
+  const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const sessionToken = useRef(getOrCreateSession());
   const roomId = useRef(getRoomId());
 
+  // ── Inactivity helpers ────────────────────────────────────────────────────
+
+  const clearInactivityTimers = () => {
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    if (countdownInterval.current) clearInterval(countdownInterval.current);
+  };
+
+  const startInactivityTimer = () => {
+    clearInactivityTimers();
+    setShowInactivityWarning(false);
+    inactivityTimer.current = setTimeout(() => {
+      setWarningCountdown(WARNING_COUNTDOWN_S);
+      setShowInactivityWarning(true);
+      let remaining = WARNING_COUNTDOWN_S;
+      countdownInterval.current = setInterval(() => {
+        remaining -= 1;
+        setWarningCountdown(remaining);
+        if (remaining <= 0) {
+          clearInterval(countdownInterval.current!);
+          socket.emit("forfeit");
+          setTimeout(() => { window.location.href = window.location.pathname; }, 300);
+        }
+      }, 1000);
+    }, INACTIVITY_MS);
+  };
+
+  const handleStayIn = () => {
+    clearInactivityTimers();
+    setShowInactivityWarning(false);
+    startInactivityTimer();
+  };
+
+  const handleInactivityLeave = () => {
+    clearInactivityTimers();
+    setShowInactivityWarning(false);
+    socket.emit("forfeit");
+    setTimeout(() => { window.location.href = window.location.pathname; }, 300);
+  };
+
   useEffect(() => {
-    // Load font
+    if (!gameState || gameState.gameOver || Object.keys(gameState.players).length < 2) {
+      clearInactivityTimers();
+      setShowInactivityWarning(false);
+      return;
+    }
+    startInactivityTimer();
+    return clearInactivityTimers;
+  }, [gameState?.log]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Socket setup ──────────────────────────────────────────────────────────
+
+  useEffect(() => {
     const link = document.createElement("link");
     link.href = "https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap";
     link.rel = "stylesheet";
     document.head.appendChild(link);
 
-    // Socket event listeners
     socket.on("stateUpdate", (s: GameState) => setGameState(s));
     socket.on("roomFull", () => setRoomFull(true));
     socket.on("leaderboard", (data: LeaderboardEntry[]) => setLeaderboard(data));
 
-    // On every (re)connect, rejoin the room with our session token
     socket.on("connect", () => {
       const name = localStorage.getItem("kramkard_name");
       if (name) {
@@ -378,13 +530,12 @@ export default function App() {
       }
     });
 
-    // Now connect — after listeners are registered
     const storedName = localStorage.getItem("kramkard_name");
     if (!storedName) {
       setShowNameModal(true);
-      socket.connect(); // connect now, will join after name entered
+      socket.connect();
     } else {
-      socket.connect(); // connect and join via "connect" event above
+      socket.connect();
     }
 
     return () => {
@@ -392,8 +543,9 @@ export default function App() {
       socket.off("roomFull");
       socket.off("leaderboard");
       socket.off("connect");
+      clearInactivityTimers();
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function doJoin(name: string) {
     localStorage.setItem("kramkard_name", name);
@@ -416,11 +568,11 @@ export default function App() {
   const openLeaderboard = () => { socket.emit("getLeaderboard"); setShowLeaderboard(true); };
 
   const handleLeave = () => {
-    if (window.confirm("Leave the game? Your opponent will win.")) {
+    if (isGameOver) { window.location.href = window.location.pathname; return; }
+    if (playerCount < 2) { window.location.href = window.location.pathname; return; }
+    if (window.confirm("Forfeit the match? Your opponent will be declared the winner.")) {
       socket.emit("forfeit");
-      setTimeout(() => {
-        window.location.href = window.location.pathname; // go to fresh room
-      }, 300);
+      setTimeout(() => { window.location.href = window.location.pathname; }, 300);
     }
   };
 
@@ -445,6 +597,7 @@ export default function App() {
   const iWon = winnerId === myToken;
   const myRematchReady = myPlayer?.rematchReady ?? false;
   const opponentRematchReady = opponentPlayer?.rematchReady ?? false;
+  const lastNarration = gameState?.lastNarration ?? "";
 
   return (
     <div style={{ background: "#05050f", minHeight: "100vh", color: "#e0e0e0", fontFamily: "'Press Start 2P', monospace", overflowX: "hidden", position: "relative" }}>
@@ -460,6 +613,46 @@ export default function App() {
 
       {showNameModal && <NameModal onSubmit={handleNameSubmit} />}
       {showLeaderboard && <LeaderboardPanel entries={leaderboard} myToken={myToken ?? ""} onClose={() => setShowLeaderboard(false)} />}
+      {showInactivityWarning && (
+        <InactivityWarning secondsLeft={warningCountdown} onStayIn={handleStayIn} onLeave={handleInactivityLeave} />
+      )}
+
+      {/* ── Left narration panel ── */}
+      {playerCount === 2 && <NarrationPanel text={lastNarration} />}
+
+      {/* ── Right battle log (bigger) ── */}
+      <div style={{
+        position: "fixed", right: 14, top: 70,
+        width: 240,           // was 190
+        maxHeight: "75vh",
+        background: "#060610",
+        border: "2px solid #1a1a2e",
+        borderTop: "2px solid #a55eea",
+        fontFamily: "'Press Start 2P', monospace",
+        zIndex: 10, overflowY: "auto",
+      }}>
+        <div style={{ padding: "7px 9px", borderBottom: "1px solid #1a1a2e", fontSize: 6, color: "#a55eea", letterSpacing: 2, background: "#0a0a18", display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ animation: "blink 2s step-end infinite" }}>▐</span> BATTLE LOG
+        </div>
+        <ul style={{ listStyle: "none", padding: "7px 9px", margin: 0 }}>
+          {(gameState?.log ?? []).map((entry, i) => (
+            <li key={i} style={{
+              fontSize: 6,          // was 5
+              color: i === 0 ? "#f9ca24" : "#555",
+              lineHeight: 2,
+              borderBottom: "1px solid #0d0d1a",
+              paddingBottom: 6,
+              marginBottom: 6,
+              letterSpacing: 0.3,
+            }}>{entry}</li>
+          ))}
+        </ul>
+        <div style={{ padding: "3px 9px 7px", display: "flex", gap: 3 }}>
+          {["#fc5c65","#f9ca24","#26de81","#45aaf2","#a55eea"].map((c, i) => (
+            <div key={i} style={{ width: 5, height: 5, background: c, opacity: 0.5 }} />
+          ))}
+        </div>
+      </div>
 
       <div style={{ position: "relative", zIndex: 2, maxWidth: 860, margin: "0 auto", padding: "16px 14px", minHeight: "100vh", display: "flex", flexDirection: "column", gap: 10 }}>
 
@@ -476,7 +669,7 @@ export default function App() {
             ★ LEADERBOARD
           </button>
           <button onClick={handleLeave} style={{ background: "transparent", border: "1px solid #fc5c65", color: "#fc5c65", padding: "5px 14px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}>
-            ✕ LEAVE
+            {isGameOver ? "✕ EXIT" : "✕ FORFEIT"}
           </button>
         </div>
 
@@ -540,33 +733,26 @@ export default function App() {
             <div style={{ fontSize: 10, letterSpacing: 2, animation: "pulse 1.2s ease-in-out infinite" }}>{iWon ? "★ VICTORY! ★" : "✕ DEFEAT ✕"}</div>
             <div style={{ fontSize: 7, color: iWon ? "#f9ca24" : "#fc5c65" }}>{winnerName.toUpperCase()} WINS!</div>
             {playerCount === 2 && (
-              <div style={{ display: "flex", gap: 12 }}>
-                <button onClick={requestRematch} disabled={myRematchReady} style={{ background: myRematchReady ? "#1a1a0a" : "transparent", border: `1px solid ${myRematchReady ? "#555" : "#f9ca24"}`, color: myRematchReady ? "#555" : "#f9ca24", padding: "8px 18px", fontSize: 7, fontFamily: "'Press Start 2P', monospace", cursor: myRematchReady ? "default" : "pointer", letterSpacing: 1 }}>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+                <button
+                  onClick={requestRematch}
+                  disabled={myRematchReady}
+                  style={{ background: myRematchReady ? "#1a1a0a" : "transparent", border: `1px solid ${myRematchReady ? "#555" : "#f9ca24"}`, color: myRematchReady ? "#555" : "#f9ca24", padding: "8px 18px", fontSize: 7, fontFamily: "'Press Start 2P', monospace", cursor: myRematchReady ? "default" : "pointer", letterSpacing: 1 }}
+                >
                   {myRematchReady ? "READY ✓" : "REMATCH?"}
                 </button>
-                {opponentRematchReady && !myRematchReady && <div style={{ fontSize: 6, color: "#26de81", display: "flex", alignItems: "center" }}>FOE READY!</div>}
+                <button
+                  onClick={() => { window.location.href = window.location.pathname; }}
+                  style={{ background: "transparent", border: "1px solid #fc5c65", color: "#fc5c65", padding: "8px 18px", fontSize: 7, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}
+                >
+                  ✕ LEAVE
+                </button>
               </div>
             )}
+            {opponentRematchReady && !myRematchReady && <div style={{ fontSize: 6, color: "#26de81", display: "flex", alignItems: "center" }}>FOE READY!</div>}
             {myRematchReady && !opponentRematchReady && <div style={{ fontSize: 6, color: "#555", animation: "blink 1s step-end infinite" }}>WAITING FOR OPPONENT...</div>}
           </div>
         )}
-      </div>
-
-      {/* Battle Log */}
-      <div style={{ position: "fixed", right: 14, top: 70, width: 190, maxHeight: "75vh", background: "#060610", border: "2px solid #1a1a2e", borderTop: "2px solid #a55eea", fontFamily: "'Press Start 2P', monospace", zIndex: 10, overflowY: "auto" }}>
-        <div style={{ padding: "7px 9px", borderBottom: "1px solid #1a1a2e", fontSize: 6, color: "#a55eea", letterSpacing: 2, background: "#0a0a18", display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={{ animation: "blink 2s step-end infinite" }}>▐</span> BATTLE LOG
-        </div>
-        <ul style={{ listStyle: "none", padding: "7px 9px", margin: 0 }}>
-          {(gameState?.log ?? []).map((entry, i) => (
-            <li key={i} style={{ fontSize: 5, color: i === 0 ? "#f9ca24" : "#444", lineHeight: 1.9, borderBottom: "1px solid #0d0d1a", paddingBottom: 5, marginBottom: 5, letterSpacing: 0.3 }}>{entry}</li>
-          ))}
-        </ul>
-        <div style={{ padding: "3px 9px 7px", display: "flex", gap: 3 }}>
-          {["#fc5c65","#f9ca24","#26de81","#45aaf2","#a55eea"].map((c, i) => (
-            <div key={i} style={{ width: 5, height: 5, background: c, opacity: 0.5 }} />
-          ))}
-        </div>
       </div>
     </div>
   );
