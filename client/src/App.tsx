@@ -672,7 +672,10 @@ const handleLeave = () => {
           <button onClick={openLeaderboard} style={{ background: "transparent", border: "1px solid #a55eea", color: "#a55eea", padding: "5px 14px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}>
             ★ LEADERBOARD
           </button>
-          <button onClick={handleLeave} style={{ background: "transparent", border: "1px solid #fc5c65", color: "#fc5c65", padding: "5px 14px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}>
+          <button
+            onClick={() => { window.location.href = window.location.origin; }}
+            style={{ background: "transparent", border: "1px solid #fc5c65", color: "#fc5c65", padding: "5px 14px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}
+          >
             {isGameOver ? "✕ EXIT" : "✕ FORFEIT"}
           </button>
         </div>
@@ -746,7 +749,7 @@ const handleLeave = () => {
                   {myRematchReady ? "READY ✓" : "REMATCH?"}
                 </button>
                 <button
-                  onClick={() => { window.location.href = window.location.origin; }}
+                  onClick={() => { window.location.href = window.location.pathname; }}
                   style={{ background: "transparent", border: "1px solid #fc5c65", color: "#fc5c65", padding: "8px 18px", fontSize: 7, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}
                 >
                   ✕ LEAVE
