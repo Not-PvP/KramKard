@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ interface LeaderboardEntry {
   losses: number;
 }
 
-// ─── Card definitions (all 25) ────────────────────────────────────────────────
+// ─── Card definitions ────────────────────────────────────────────────────────
 
 const RARITY_COLORS: Record<Rarity, string> = {
   common:    "#888",
@@ -98,7 +98,7 @@ const CARD_DEFS: Record<CardId, CardDef> = {
   regen:           { id: "regen",           name: "REGEN",          icon: "💚", rarity: "uncommon",  color: "#26de81", bgColor: "#001508", glowColor: "#26de81", description: "Heal 9–15 HP over 3 turns" },
 };
 
-// ─── Session token ────────────────────────────────────────────────────────────
+// ─── Session helpers ──────────────────────────────────────────────────────────
 
 function getOrCreateSession(): string {
   let token = localStorage.getItem("kramkard_session");
@@ -131,29 +131,23 @@ function Starfield() {
     const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
     resize();
     window.addEventListener("resize", resize);
-
     const stars = Array.from({ length: 140 }, () => ({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      r: Math.random() * 1.5 + 0.3,
-      speed: Math.random() * 0.25 + 0.04,
+      x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+      r: Math.random() * 1.5 + 0.3, speed: Math.random() * 0.25 + 0.04,
       flicker: Math.random() * Math.PI * 2,
     }));
     const pixels = Array.from({ length: 25 }, () => ({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
+      x: Math.random() * canvas.width, y: Math.random() * canvas.height,
       size: Math.floor(Math.random() * 3) + 1,
       color: ["#a55eea", "#45aaf2", "#fc5c65", "#f9ca24"][Math.floor(Math.random() * 4)],
       speed: Math.random() * 0.12 + 0.02,
     }));
-
     let raf: number;
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       stars.forEach(s => {
         s.flicker += 0.018;
-        const alpha = 0.3 + Math.sin(s.flicker) * 0.3;
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.fillStyle = `rgba(255,255,255,${0.3 + Math.sin(s.flicker) * 0.3})`;
         ctx.fillRect(Math.floor(s.x), Math.floor(s.y), Math.ceil(s.r), Math.ceil(s.r));
         s.y += s.speed;
         if (s.y > canvas.height) { s.y = 0; s.x = Math.random() * canvas.width; }
@@ -169,11 +163,10 @@ function Starfield() {
     draw();
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
   }, []);
-
   return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, width: "100%", height: "100%", zIndex: 0, pointerEvents: "none" }} />;
 }
 
-// ─── HP Bar ────────────────────────────────────────────────────────────────────
+// ─── HP Bar ───────────────────────────────────────────────────────────────────
 
 function HPBar({ hp, maxHp }: { hp: number; maxHp: number }) {
   const pct = Math.max(0, Math.min(100, (hp / maxHp) * 100));
@@ -183,54 +176,24 @@ function HPBar({ hp, maxHp }: { hp: number; maxHp: number }) {
     <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
       {Array.from({ length: segments }).map((_, i) => {
         const filled = i < Math.round((pct / 100) * segments);
-        return (
-          <div key={i} style={{
-            width: 8, height: 12,
-            background: filled ? color : "#111",
-            border: `1px solid ${filled ? color : "#222"}`,
-            boxShadow: filled ? `0 0 3px ${color}88` : "none",
-          }} />
-        );
+        return <div key={i} style={{ width: 8, height: 12, background: filled ? color : "#111", border: `1px solid ${filled ? color : "#222"}`, boxShadow: filled ? `0 0 3px ${color}88` : "none" }} />;
       })}
       <span style={{ marginLeft: 6, fontSize: 10, color: "#ccc" }}>{hp}</span>
     </div>
   );
 }
 
-// ─── Battle card (player info panel) ─────────────────────────────────────────
+// ─── Battle card ──────────────────────────────────────────────────────────────
 
 function BattleCard({ player, isActive, isMine }: { player: PlayerState; isActive: boolean; isMine: boolean }) {
   const borderColor = isActive ? "#f9ca24" : isMine ? "#45aaf2" : "#a55eea";
-  const shake = isActive ? "" : "";
   return (
-    <div style={{
-      position: "relative",
-      background: "linear-gradient(135deg, #0a0a16 0%, #080810 100%)",
-      border: `2px solid ${borderColor}`,
-      padding: "14px 18px",
-      minWidth: 240,
-      fontFamily: "'Press Start 2P', monospace",
-      boxShadow: isActive
-        ? `0 0 0 1px ${borderColor}44, 0 0 20px ${borderColor}33`
-        : `0 0 0 1px ${borderColor}22`,
-      transform: isActive ? "scale(1.02)" : "scale(1)",
-      transition: "all 0.2s ease",
-      opacity: player.connected ? 1 : 0.5,
-    }}>
-      {/* Corner pixels */}
+    <div style={{ position: "relative", background: "linear-gradient(135deg, #0a0a16 0%, #080810 100%)", border: `2px solid ${borderColor}`, padding: "14px 18px", minWidth: 240, fontFamily: "'Press Start 2P', monospace", boxShadow: isActive ? `0 0 0 1px ${borderColor}44, 0 0 20px ${borderColor}33` : `0 0 0 1px ${borderColor}22`, transform: isActive ? "scale(1.02)" : "scale(1)", transition: "all 0.2s ease", opacity: player.connected ? 1 : 0.5 }}>
       {[["-2px","-2px","top","left"],["-2px","-2px","top","right"],["-2px","-2px","bottom","left"],["-2px","-2px","bottom","right"]].map(([,, v, h], i) => (
         <div key={i} style={{ position: "absolute", [v]: -2, [h]: -2, width: 6, height: 6, background: borderColor, boxShadow: `0 0 5px ${borderColor}` }} />
       ))}
-      {isActive && (
-        <div style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", fontSize: 7, color: "#f9ca24", animation: "blink 0.8s step-end infinite", whiteSpace: "nowrap" }}>
-          ▼ TURN ▼
-        </div>
-      )}
-      {!player.connected && (
-        <div style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", fontSize: 6, color: "#fc5c65", animation: "blink 1s step-end infinite", whiteSpace: "nowrap" }}>
-          ⚠ DISCONNECTED
-        </div>
-      )}
+      {isActive && <div style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", fontSize: 7, color: "#f9ca24", animation: "blink 0.8s step-end infinite", whiteSpace: "nowrap" }}>▼ TURN ▼</div>}
+      {!player.connected && <div style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", fontSize: 6, color: "#fc5c65", animation: "blink 1s step-end infinite", whiteSpace: "nowrap" }}>⚠ DISCONNECTED</div>}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontSize: 7, color: isMine ? "#45aaf2" : "#a55eea", letterSpacing: 1 }}>{isMine ? "► YOU" : "► FOE"}</span>
         <span style={{ fontSize: 8, color: "#fff" }}>{player.name.toUpperCase()}</span>
@@ -253,11 +216,7 @@ function BattleCard({ player, isActive, isMine }: { player: PlayerState; isActiv
 }
 
 function StatusBadge({ label, color }: { label: string; color: string }) {
-  return (
-    <span style={{ fontSize: 6, color, border: `1px solid ${color}`, padding: "2px 5px", letterSpacing: 1 }}>
-      {label}
-    </span>
-  );
+  return <span style={{ fontSize: 6, color, border: `1px solid ${color}`, padding: "2px 5px", letterSpacing: 1 }}>{label}</span>;
 }
 
 // ─── Hand card ────────────────────────────────────────────────────────────────
@@ -279,22 +238,15 @@ function HandCard({ cardId, index, total, onClick, disabled }: {
       onMouseLeave={() => setHovered(false)}
       style={{
         cursor: disabled || isHidden ? "default" : "pointer",
-        position: "relative",
-        width: 120,
-        minHeight: 180,
+        position: "relative", width: 120, minHeight: 180,
         background: isHidden ? "#0a0a14" : def!.bgColor,
         border: `2px solid ${isHidden ? "#1a1a2e" : hovered ? def!.color : def!.color + "55"}`,
         fontFamily: "'Press Start 2P', monospace",
-        transform: hovered
-          ? "translateY(-28px) rotate(0deg) scale(1.08)"
-          : `translateY(${translateY}px) rotate(${rotate}deg)`,
+        transform: hovered ? "translateY(-28px) rotate(0deg) scale(1.08)" : `translateY(${translateY}px) rotate(${rotate}deg)`,
         transition: "all 0.15s ease",
         opacity: disabled ? 0.45 : 1,
-        boxShadow: hovered && def
-          ? `0 0 0 1px ${def.color}, 0 0 18px ${def.glowColor}55, 0 0 36px ${def.glowColor}22`
-          : "none",
-        overflow: "hidden",
-        flexShrink: 0,
+        boxShadow: hovered && def ? `0 0 0 1px ${def.color}, 0 0 18px ${def.glowColor}55, 0 0 36px ${def.glowColor}22` : "none",
+        overflow: "hidden", flexShrink: 0,
       }}
     >
       {isHidden ? (
@@ -327,124 +279,52 @@ function HandCard({ cardId, index, total, onClick, disabled }: {
 
 function LeaderboardPanel({ entries, myToken, onClose }: { entries: LeaderboardEntry[]; myToken: string; onClose: () => void }) {
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 50,
-      background: "rgba(0,0,0,0.85)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-    }}>
-      <div style={{
-        background: "#080810",
-        border: "2px solid #f9ca24",
-        padding: "20px 24px",
-        minWidth: 340,
-        maxHeight: "80vh",
-        overflowY: "auto",
-        fontFamily: "'Press Start 2P', monospace",
-        position: "relative",
-      }}>
-        <div style={{ fontSize: 9, color: "#f9ca24", letterSpacing: 2, marginBottom: 16, textAlign: "center" }}>
-          ★ LEADERBOARD ★
-        </div>
-        {entries.length === 0 && (
-          <div style={{ fontSize: 7, color: "#555", textAlign: "center" }}>No records yet.</div>
-        )}
+    <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#080810", border: "2px solid #f9ca24", padding: "20px 24px", minWidth: 340, maxHeight: "80vh", overflowY: "auto", fontFamily: "'Press Start 2P', monospace", position: "relative" }}>
+        <div style={{ fontSize: 9, color: "#f9ca24", letterSpacing: 2, marginBottom: 16, textAlign: "center" }}>★ LEADERBOARD ★</div>
+        {entries.length === 0 && <div style={{ fontSize: 7, color: "#555", textAlign: "center" }}>No records yet.</div>}
         {entries.map((e, i) => (
-          <div key={e.sessionToken} style={{
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "8px 0",
-            borderBottom: "1px solid #1a1a2e",
-            color: e.sessionToken === myToken ? "#f9ca24" : "#aaa",
-          }}>
-            <span style={{ fontSize: 7, minWidth: 20, color: i === 0 ? "#f9ca24" : i === 1 ? "#aaa" : i === 2 ? "#cd7f32" : "#555" }}>
-              {i + 1}.
-            </span>
+          <div key={e.sessionToken} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #1a1a2e", color: e.sessionToken === myToken ? "#f9ca24" : "#aaa" }}>
+            <span style={{ fontSize: 7, minWidth: 20, color: i === 0 ? "#f9ca24" : i === 1 ? "#aaa" : i === 2 ? "#cd7f32" : "#555" }}>{i + 1}.</span>
             <span style={{ fontSize: 7, flex: 1, marginLeft: 8 }}>{e.name.toUpperCase()}</span>
             <span style={{ fontSize: 6, color: "#26de81", marginRight: 10 }}>{e.wins}W</span>
             <span style={{ fontSize: 6, color: "#fc5c65" }}>{e.losses}L</span>
           </div>
         ))}
-        <button
-          onClick={onClose}
-          style={{
-            marginTop: 16, width: "100%", padding: "8px", fontSize: 7,
-            background: "transparent", border: "1px solid #f9ca24", color: "#f9ca24",
-            fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1,
-          }}
-        >
-          CLOSE
-        </button>
+        <button onClick={onClose} style={{ marginTop: 16, width: "100%", padding: "8px", fontSize: 7, background: "transparent", border: "1px solid #f9ca24", color: "#f9ca24", fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}>CLOSE</button>
       </div>
     </div>
   );
 }
 
-// ─── Name input modal ─────────────────────────────────────────────────────────
+// ─── Name modal ───────────────────────────────────────────────────────────────
 
 function NameModal({ onSubmit }: { onSubmit: (name: string) => void }) {
   const [val, setVal] = useState("");
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 50,
-      background: "rgba(0,0,0,0.9)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Press Start 2P', monospace",
-    }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,0.9)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Press Start 2P', monospace" }}>
       <div style={{ background: "#080810", border: "2px solid #45aaf2", padding: "28px 32px", textAlign: "center" }}>
         <div style={{ fontSize: 8, color: "#45aaf2", marginBottom: 20, letterSpacing: 2 }}>ENTER YOUR NAME</div>
-        <input
-          value={val}
-          onChange={e => setVal(e.target.value.slice(0, 16))}
-          onKeyDown={e => e.key === "Enter" && val.trim() && onSubmit(val.trim())}
-          autoFocus
-          maxLength={16}
-          style={{
-            background: "#0d0d1a", border: "1px solid #45aaf2", color: "#fff",
-            padding: "8px 12px", fontSize: 10, fontFamily: "'Press Start 2P', monospace",
-            width: 220, outline: "none", marginBottom: 16, display: "block",
-          }}
-          placeholder="WARRIOR"
-        />
-        <button
-          onClick={() => val.trim() && onSubmit(val.trim())}
-          style={{
-            background: "#45aaf2", border: "none", color: "#000",
-            padding: "8px 20px", fontSize: 8, fontFamily: "'Press Start 2P', monospace",
-            cursor: "pointer", letterSpacing: 1,
-          }}
-        >
-          ENTER ARENA
-        </button>
+        <input value={val} onChange={e => setVal(e.target.value.slice(0, 16))} onKeyDown={e => e.key === "Enter" && val.trim() && onSubmit(val.trim())} autoFocus maxLength={16}
+          style={{ background: "#0d0d1a", border: "1px solid #45aaf2", color: "#fff", padding: "8px 12px", fontSize: 10, fontFamily: "'Press Start 2P', monospace", width: 220, outline: "none", marginBottom: 16, display: "block" }} placeholder="WARRIOR" />
+        <button onClick={() => val.trim() && onSubmit(val.trim())} style={{ background: "#45aaf2", border: "none", color: "#000", padding: "8px 20px", fontSize: 8, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}>ENTER ARENA</button>
       </div>
     </div>
   );
 }
 
-// ─── Share room link ──────────────────────────────────────────────────────────
+// ─── Share link ───────────────────────────────────────────────────────────────
 
 function ShareLink({ roomId }: { roomId: string }) {
   const [copied, setCopied] = useState(false);
   const url = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
-  const copy = () => {
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const copy = () => { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); };
   return (
     <div style={{ textAlign: "center", fontFamily: "'Press Start 2P', monospace" }}>
       <div style={{ fontSize: 6, color: "#555", marginBottom: 8, letterSpacing: 1 }}>SHARE THIS ROOM:</div>
       <div style={{ display: "flex", gap: 8, justifyContent: "center", alignItems: "center" }}>
-        <div style={{ fontSize: 6, color: "#45aaf2", background: "#050510", border: "1px solid #1a1a2e", padding: "6px 10px", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {url}
-        </div>
-        <button
-          onClick={copy}
-          style={{
-            background: "transparent", border: "1px solid #45aaf2", color: copied ? "#26de81" : "#45aaf2",
-            padding: "6px 10px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1, whiteSpace: "nowrap",
-          }}
-        >
-          {copied ? "COPIED!" : "COPY"}
-        </button>
+        <div style={{ fontSize: 6, color: "#45aaf2", background: "#050510", border: "1px solid #1a1a2e", padding: "6px 10px", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{url}</div>
+        <button onClick={copy} style={{ background: "transparent", border: "1px solid #45aaf2", color: copied ? "#26de81" : "#45aaf2", padding: "6px 10px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1, whiteSpace: "nowrap" }}>{copied ? "COPIED!" : "COPY"}</button>
       </div>
     </div>
   );
@@ -452,12 +332,15 @@ function ShareLink({ roomId }: { roomId: string }) {
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
-const socket: Socket = io(import.meta.env.VITE_SERVER_URL ?? "http://localhost:3000", {
+// Socket created ONCE at module level — this is correct
+const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3000";
+const socket: Socket = io(SERVER_URL, {
   transports: ["websocket", "polling"],
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
   timeout: 20000,
+  autoConnect: false, // ← KEY FIX: don't connect until we have session info
 });
 
 export default function App() {
@@ -471,35 +354,38 @@ export default function App() {
   const sessionToken = useRef(getOrCreateSession());
   const roomId = useRef(getRoomId());
 
-  // Join on mount
   useEffect(() => {
+    // Load font
     const link = document.createElement("link");
     link.href = "https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap";
     link.rel = "stylesheet";
     document.head.appendChild(link);
 
-    // Check if we have a stored name
-    const storedName = localStorage.getItem("kramkard_name");
-    if (!storedName) {
-      setShowNameModal(true);
-    } else {
-      doJoin(storedName);
-    }
-
+    // Socket event listeners
     socket.on("stateUpdate", (s: GameState) => setGameState(s));
     socket.on("roomFull", () => setRoomFull(true));
     socket.on("leaderboard", (data: LeaderboardEntry[]) => setLeaderboard(data));
 
+    // On every (re)connect, rejoin the room with our session token
     socket.on("connect", () => {
       const name = localStorage.getItem("kramkard_name");
       if (name) {
-        socket.emit("joinRoom", { 
-        roomId: roomId.current, 
-        sessionToken: sessionToken.current, 
-        preferredName: name 
+        socket.emit("joinRoom", {
+          roomId: roomId.current,
+          sessionToken: sessionToken.current,
+          preferredName: name,
+        });
+      }
     });
-  }
-});
+
+    // Now connect — after listeners are registered
+    const storedName = localStorage.getItem("kramkard_name");
+    if (!storedName) {
+      setShowNameModal(true);
+      socket.connect(); // connect now, will join after name entered
+    } else {
+      socket.connect(); // connect and join via "connect" event above
+    }
 
     return () => {
       socket.off("stateUpdate");
@@ -511,7 +397,11 @@ export default function App() {
 
   function doJoin(name: string) {
     localStorage.setItem("kramkard_name", name);
-    socket.emit("joinRoom", { roomId: roomId.current, sessionToken: sessionToken.current, preferredName: name });
+    socket.emit("joinRoom", {
+      roomId: roomId.current,
+      sessionToken: sessionToken.current,
+      preferredName: name,
+    });
     setNameSet(true);
   }
 
@@ -521,14 +411,17 @@ export default function App() {
     socket.emit("setName", name);
   }
 
-  const playCard = (cardId: CardId) => {
-    console.log("playing card:", cardId, "isMyTurn:", isMyTurn, "socket connected:", socket.connected);
-    socket.emit("playCard", cardId);
-  };
+  const playCard = (cardId: CardId) => socket.emit("playCard", cardId);
   const requestRematch = () => socket.emit("rematch");
-  const openLeaderboard = () => {
-    socket.emit("getLeaderboard");
-    setShowLeaderboard(true);
+  const openLeaderboard = () => { socket.emit("getLeaderboard"); setShowLeaderboard(true); };
+
+  const handleLeave = () => {
+    if (window.confirm("Leave the game? Your opponent will win.")) {
+      socket.emit("forfeit");
+      setTimeout(() => {
+        window.location.href = window.location.pathname; // go to fresh room
+      }, 300);
+    }
   };
 
   if (roomFull) {
@@ -570,24 +463,20 @@ export default function App() {
 
       <div style={{ position: "relative", zIndex: 2, maxWidth: 860, margin: "0 auto", padding: "16px 14px", minHeight: "100vh", display: "flex", flexDirection: "column", gap: 10 }}>
 
-        {/* Title bar */}
+        {/* Title */}
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 6, color: "#a55eea", letterSpacing: 4, marginBottom: 4, animation: "blink 2s step-end infinite" }}>★ COSMIC ARENA ★</div>
           <h1 style={{ fontSize: 18, color: "#f9ca24", margin: 0, letterSpacing: 3, textShadow: "0 0 8px #f9ca24aa" }}>KRAM KARD</h1>
           <div style={{ fontSize: 5, color: "#222", marginTop: 4, letterSpacing: 2 }}>▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</div>
         </div>
 
-        {/* Leaderboard button */}
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <button
-            onClick={openLeaderboard}
-            style={{
-              background: "transparent", border: "1px solid #a55eea", color: "#a55eea",
-              padding: "5px 14px", fontSize: 6, fontFamily: "'Press Start 2P', monospace",
-              cursor: "pointer", letterSpacing: 1,
-            }}
-          >
+        {/* Buttons */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+          <button onClick={openLeaderboard} style={{ background: "transparent", border: "1px solid #a55eea", color: "#a55eea", padding: "5px 14px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}>
             ★ LEADERBOARD
+          </button>
+          <button onClick={handleLeave} style={{ background: "transparent", border: "1px solid #fc5c65", color: "#fc5c65", padding: "5px 14px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}>
+            ✕ LEAVE
           </button>
         </div>
 
@@ -596,32 +485,23 @@ export default function App() {
           {!isGameOver && (playerCount === 2 ? (isMyTurn ? "► YOUR TURN — PICK A CARD ◄" : "-- OPPONENT'S TURN --") : "")}
         </div>
 
-        {/* Opponent area */}
+        {/* Opponent */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
           {opponentPlayer && (
             <div style={{ animation: "pixelIn 0.3s ease" }}>
               <BattleCard player={opponentPlayer} isActive={!isMyTurn && !isGameOver} isMine={false} />
             </div>
           )}
-          {/* Opponent hidden hand */}
           {opponentPlayer && (
             <div style={{ display: "flex", gap: 5, alignItems: "flex-end" }}>
               {opponentPlayer.hand.map((_, i) => (
-                <div key={i} style={{
-                  width: 24, height: 36,
-                  transform: `rotate(${(i - Math.floor(opponentPlayer.hand.length / 2)) * 4}deg)`,
-                  background: "repeating-linear-gradient(45deg, #0d0d1a 0, #0d0d1a 3px, #111128 3px, #111128 6px)",
-                  border: "1px solid #1a1a2e",
-                }} />
+                <div key={i} style={{ width: 24, height: 36, transform: `rotate(${(i - Math.floor(opponentPlayer.hand.length / 2)) * 4}deg)`, background: "repeating-linear-gradient(45deg, #0d0d1a 0, #0d0d1a 3px, #111128 3px, #111128 6px)", border: "1px solid #1a1a2e" }} />
               ))}
             </div>
           )}
         </div>
 
-        {/* VS divider */}
-        {playerCount === 2 && (
-          <div style={{ textAlign: "center", fontSize: 7, color: "#222", letterSpacing: 5 }}>──── VS ────</div>
-        )}
+        {playerCount === 2 && <div style={{ textAlign: "center", fontSize: 7, color: "#222", letterSpacing: 5 }}>──── VS ────</div>}
 
         {/* My area */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
@@ -630,8 +510,6 @@ export default function App() {
               <BattleCard player={myPlayer} isActive={isMyTurn && !isGameOver} isMine={true} />
             </div>
           )}
-
-          {/* My hand */}
           {myPlayer && (
             <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: "center", flexWrap: "wrap", paddingTop: 8, minHeight: 200 }}>
               {myPlayer.hand.map((cardId, i) => (
@@ -648,75 +526,40 @@ export default function App() {
           )}
         </div>
 
-        {/* Waiting for player 2 */}
+        {/* Waiting */}
         {playerCount < 2 && nameSet && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "center", marginTop: 16 }}>
-            <div style={{ fontSize: 7, color: "#444", letterSpacing: 2, animation: "blink 1s step-end infinite" }}>
-              ▓ WAITING FOR PLAYER 2 ▓
-            </div>
+            <div style={{ fontSize: 7, color: "#444", letterSpacing: 2, animation: "blink 1s step-end infinite" }}>▓ WAITING FOR PLAYER 2 ▓</div>
             <ShareLink roomId={roomId.current} />
           </div>
         )}
 
-        {/* Game over panel */}
+        {/* Game over */}
         {isGameOver && winnerName && (
           <div style={{ textAlign: "center", marginTop: 16, animation: "slideUp 0.4s ease", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-            <div style={{ fontSize: 10, letterSpacing: 2, animation: "pulse 1.2s ease-in-out infinite" }}>
-              {iWon ? "★ VICTORY! ★" : "✕ DEFEAT ✕"}
-            </div>
-            <div style={{ fontSize: 7, color: iWon ? "#f9ca24" : "#fc5c65" }}>
-              {winnerName.toUpperCase()} WINS!
-            </div>
+            <div style={{ fontSize: 10, letterSpacing: 2, animation: "pulse 1.2s ease-in-out infinite" }}>{iWon ? "★ VICTORY! ★" : "✕ DEFEAT ✕"}</div>
+            <div style={{ fontSize: 7, color: iWon ? "#f9ca24" : "#fc5c65" }}>{winnerName.toUpperCase()} WINS!</div>
             {playerCount === 2 && (
               <div style={{ display: "flex", gap: 12 }}>
-                <button
-                  onClick={requestRematch}
-                  disabled={myRematchReady}
-                  style={{
-                    background: myRematchReady ? "#1a1a0a" : "transparent",
-                    border: `1px solid ${myRematchReady ? "#555" : "#f9ca24"}`,
-                    color: myRematchReady ? "#555" : "#f9ca24",
-                    padding: "8px 18px", fontSize: 7,
-                    fontFamily: "'Press Start 2P', monospace", cursor: myRematchReady ? "default" : "pointer", letterSpacing: 1,
-                  }}
-                >
+                <button onClick={requestRematch} disabled={myRematchReady} style={{ background: myRematchReady ? "#1a1a0a" : "transparent", border: `1px solid ${myRematchReady ? "#555" : "#f9ca24"}`, color: myRematchReady ? "#555" : "#f9ca24", padding: "8px 18px", fontSize: 7, fontFamily: "'Press Start 2P', monospace", cursor: myRematchReady ? "default" : "pointer", letterSpacing: 1 }}>
                   {myRematchReady ? "READY ✓" : "REMATCH?"}
                 </button>
-                {opponentRematchReady && !myRematchReady && (
-                  <div style={{ fontSize: 6, color: "#26de81", display: "flex", alignItems: "center" }}>
-                    FOE READY!
-                  </div>
-                )}
+                {opponentRematchReady && !myRematchReady && <div style={{ fontSize: 6, color: "#26de81", display: "flex", alignItems: "center" }}>FOE READY!</div>}
               </div>
             )}
-            {myRematchReady && !opponentRematchReady && (
-              <div style={{ fontSize: 6, color: "#555", animation: "blink 1s step-end infinite" }}>
-                WAITING FOR OPPONENT...
-              </div>
-            )}
+            {myRematchReady && !opponentRematchReady && <div style={{ fontSize: 6, color: "#555", animation: "blink 1s step-end infinite" }}>WAITING FOR OPPONENT...</div>}
           </div>
         )}
       </div>
 
-      {/* Battle Log — fixed right panel */}
-      <div style={{
-        position: "fixed", right: 14, top: 70,
-        width: 190, maxHeight: "75vh",
-        background: "#060610",
-        border: "2px solid #1a1a2e",
-        borderTop: "2px solid #a55eea",
-        fontFamily: "'Press Start 2P', monospace",
-        zIndex: 10,
-        overflowY: "auto",
-      }}>
+      {/* Battle Log */}
+      <div style={{ position: "fixed", right: 14, top: 70, width: 190, maxHeight: "75vh", background: "#060610", border: "2px solid #1a1a2e", borderTop: "2px solid #a55eea", fontFamily: "'Press Start 2P', monospace", zIndex: 10, overflowY: "auto" }}>
         <div style={{ padding: "7px 9px", borderBottom: "1px solid #1a1a2e", fontSize: 6, color: "#a55eea", letterSpacing: 2, background: "#0a0a18", display: "flex", alignItems: "center", gap: 5 }}>
           <span style={{ animation: "blink 2s step-end infinite" }}>▐</span> BATTLE LOG
         </div>
         <ul style={{ listStyle: "none", padding: "7px 9px", margin: 0 }}>
           {(gameState?.log ?? []).map((entry, i) => (
-            <li key={i} style={{ fontSize: 5, color: i === 0 ? "#f9ca24" : "#444", lineHeight: 1.9, borderBottom: "1px solid #0d0d1a", paddingBottom: 5, marginBottom: 5, letterSpacing: 0.3 }}>
-              {entry}
-            </li>
+            <li key={i} style={{ fontSize: 5, color: i === 0 ? "#f9ca24" : "#444", lineHeight: 1.9, borderBottom: "1px solid #0d0d1a", paddingBottom: 5, marginBottom: 5, letterSpacing: 0.3 }}>{entry}</li>
           ))}
         </ul>
         <div style={{ padding: "3px 9px 7px", display: "flex", gap: 3 }}>
