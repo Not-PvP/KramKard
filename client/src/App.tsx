@@ -567,14 +567,18 @@ export default function App() {
   const requestRematch = () => socket.emit("rematch");
   const openLeaderboard = () => { socket.emit("getLeaderboard"); setShowLeaderboard(true); };
 
-  const handleLeave = () => {
-    if (isGameOver) { window.location.href = window.location.pathname; return; }
-    if (playerCount < 2) { window.location.href = window.location.pathname; return; }
-    if (window.confirm("Forfeit the match? Your opponent will be declared the winner.")) {
-      socket.emit("forfeit");
-      setTimeout(() => { window.location.href = window.location.pathname; }, 300);
-    }
-  };
+const goHome = () => {
+  window.location.href = window.location.origin + window.location.pathname.replace(/\/+$/, "");
+};
+
+const handleLeave = () => {
+  if (isGameOver) { goHome(); return; }
+  if (playerCount < 2) { goHome(); return; }
+  if (window.confirm("Forfeit the match? Your opponent will be declared the winner.")) {
+    socket.emit("forfeit");
+    setTimeout(goHome, 300);
+  }
+};
 
   if (roomFull) {
     return (
