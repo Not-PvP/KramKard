@@ -369,7 +369,7 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
         {tab === "cards" && (
           // ↓ FIX: The whole cards tab is a flex column. Grid scrolls independently.
           //   The selected-card detail panel lives BELOW the grid, never inside the scroll area.
-          <div style={{ display: "flex", flexDirection: "column", padding: isMobile ? "14px 10px 22px" : "20px 24px 28px" }}>
+          <div style={{ display: "flex", flexDirection: "column", padding: isMobile ? "14px 10px 22px" : "20px 24px 28px", maxHeight: isMobile ? "72vh" : "62vh", overflow: "hidden" }}>
             <div style={{ fontSize: isMobile ? 9 : 10, color: "#45aaf2", letterSpacing: 4, marginBottom: 14, textAlign: "center" }}>— CARD COMPENDIUM —</div>
 
             {/* Rarity filter pills */}
@@ -392,7 +392,7 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
               gap: isMobile ? 8 : 12,
               overflowY: "auto",
               // Fixed height so the detail panel below is always reachable
-              maxHeight: isMobile ? "38vh" : "44vh",
+              maxHeight: isMobile ? "30vh" : "28vh",
               paddingRight: 4,
               paddingBottom: 4,
             }}>
