@@ -133,18 +133,11 @@ function Starfield() {
   return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, width: "100%", height: "100%", zIndex: 0, pointerEvents: "none" }} />;
 }
 
-// ─── Lobby ────────────────────────────────────────────────────────────────────
+// ─── RARITY order for compendium ─────────────────────────────────
 const RARITY_ORDER = ["common","uncommon","rare","cursed","corrupted","legendary","mythic","void"] as const;
 
-function Lobby({
-  onEnter,
-  leaderboard,
-  fetchLeaderboard,
-}: {
-  onEnter: (code: string) => void;
-  leaderboard: LeaderboardEntry[];
-  fetchLeaderboard: () => void;
-}) {
+// ─── Lobby ────────────────────────────────────────────────────────────────────
+function Lobby({ onEnter, leaderboard, fetchLeaderboard }: { onEnter: (code: string) => void; leaderboard: LeaderboardEntry[]; fetchLeaderboard: () => void; }) {
   const [joinCode, setJoinCode] = useState("");
   const [mode, setMode] = useState<"main" | "join" | "created">("main");
   const [error, setError] = useState("");
@@ -168,55 +161,6 @@ function Lobby({
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
-  const cornerStyle = (v: string, h: string): React.CSSProperties => ({
-    position: "absolute", [v]: -3, [h]: -3, width: 10, height: 10,
-    background: "#f9ca24", boxShadow: "0 0 8px #f9ca24, 0 0 16px #f9ca2466",
-  });
-
-// ─── RARITY order for compendium ─────────────────────────────────
-const RARITY_ORDER = ["common","uncommon","rare","cursed","corrupted","legendary","mythic","void"] as const;
-
-// ─── Lobby ────────────────────────────────────────────────────────────────────
-function Lobby({
-  onEnter,
-  leaderboard,
-  fetchLeaderboard,
-}: {
-  onEnter: (code: string) => void;
-  leaderboard: LeaderboardEntry[];
-  fetchLeaderboard: () => void;
-}) {
-  const [joinCode, setJoinCode] = useState("");
-  const [mode, setMode] = useState<"main" | "join" | "created">("main");
-  const [error, setError] = useState("");
-  const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
-  const [createdCode, setCreatedCode] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [tab, setTab] = useState<"play" | "scores" | "cards">("play");
-  const [rarityFilter, setRarityFilter] = useState<string>("all");
-  const [selectedCard, setSelectedCard] = useState<CardId | null>(null);
-  const isMobile = useIsMobile();
-
-  // Fetch leaderboard when scores tab is opened
-  const prevTab = useRef<string>("play");
-  useEffect(() => {
-    if (tab === "scores" && prevTab.current !== "scores") fetchLeaderboard();
-    prevTab.current = tab;
-  }, [tab]); // eslint-disable-line
-
-  function handleCreate() { const code = createRoomCode(); setCreatedCode(code); setMode("created"); }
-  function handleJoin() {
-    const code = joinCode.trim().toUpperCase();
-    if (code.length < 4) { setError("INVALID CODE"); return; }
-    onEnter(joinRoomCode(code));
-  }
-  function handleCopyCode() {
-    const url = `${window.location.origin}${window.location.pathname}?room=${createdCode}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
   const cornerStyle = (v: string, h: string): React.CSSProperties => ({
     position: "absolute", [v]: -3, [h]: -3, width: 10, height: 10,
     background: "#f9ca24", boxShadow: "0 0 8px #f9ca24, 0 0 16px #f9ca2466",
