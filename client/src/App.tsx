@@ -230,13 +230,15 @@ function Lobby({
 
   const selectedDef = selectedCard ? CARD_DEFS[selectedCard] : null;
 
-  return (
+return (
     <div style={{ position:"fixed", inset:0, zIndex:50, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", fontFamily:"'Press Start 2P', monospace", padding: isMobile ? 10 : 20, overflowY:"auto" }}>
       <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:1, background:"repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,0.07) 2px,rgba(0,0,0,0.07) 4px)" }} />
 
       <div style={{ position:"relative", zIndex:2, background:"linear-gradient(160deg,#07070f 0%,#0b0b18 60%,#080812 100%)", border:"2px solid #f9ca24", width:"100%", maxWidth: isMobile ? "100%" : 500, boxShadow:"0 0 0 1px #f9ca2422,0 0 40px #f9ca2418,inset 0 0 60px #00000066", overflow:"hidden", marginTop: isMobile ? 40 : 0 }}>
-        <div style={cornerStyle("top","left")} /><div style={cornerStyle("top","right")} />
-        <div style={cornerStyle("bottom","left")} /><div style={cornerStyle("bottom","right")} />
+        <div style={{ position:"absolute", top:-3, left:-3, width:10, height:10, background:"#f9ca24", boxShadow:"0 0 8px #f9ca24" }} />
+        <div style={{ position:"absolute", top:-3, right:-3, width:10, height:10, background:"#f9ca24", boxShadow:"0 0 8px #f9ca24" }} />
+        <div style={{ position:"absolute", bottom:-3, left:-3, width:10, height:10, background:"#f9ca24", boxShadow:"0 0 8px #f9ca24" }} />
+        <div style={{ position:"absolute", bottom:-3, right:-3, width:10, height:10, background:"#f9ca24", boxShadow:"0 0 8px #f9ca24" }} />
         <div style={{ height:3, background:"linear-gradient(90deg,transparent,#f9ca24,#a55eea,#45aaf2,transparent)" }} />
 
         {/* Header */}
@@ -265,7 +267,7 @@ function Lobby({
           })}
         </div>
 
-        {/* ── PLAY TAB ── */}
+        {/* PLAY TAB */}
         {tab === "play" && (
           <div style={{ padding: isMobile ? "20px 16px 28px" : "28px 40px 36px", display:"flex", flexDirection:"column", alignItems:"center" }}>
             {mode === "main" && (<>
@@ -313,7 +315,7 @@ function Lobby({
           </div>
         )}
 
-        {/* ── SCORES TAB ── */}
+        {/* SCORES TAB */}
         {tab === "scores" && (
           <div style={{ padding: isMobile ? "16px 12px 24px" : "20px 28px 28px", minHeight:200 }}>
             <div style={{ fontSize:6, color:"#a55eea", letterSpacing:3, marginBottom:16, textAlign:"center" }}>— TOP WARRIORS —</div>
@@ -321,7 +323,6 @@ function Lobby({
               <div style={{ textAlign:"center", fontSize:6, color:"#333", padding:"30px 0", animation:"blink 1s step-end infinite" }}>▓ LOADING... ▓</div>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-                {/* Header row */}
                 <div style={{ display:"flex", padding:"6px 8px", borderBottom:"1px solid #1a1a2e", marginBottom:4 }}>
                   <span style={{ fontSize:5, color:"#333", width:24 }}>#</span>
                   <span style={{ fontSize:5, color:"#333", flex:1 }}>NAME</span>
@@ -350,28 +351,24 @@ function Lobby({
           </div>
         )}
 
-        {/* ── CARDS TAB ── */}
+        {/* CARDS TAB */}
         {tab === "cards" && (
           <div style={{ padding: isMobile ? "12px 10px 20px" : "16px 20px 24px" }}>
             <div style={{ fontSize:6, color:"#45aaf2", letterSpacing:3, marginBottom:12, textAlign:"center" }}>— CARD COMPENDIUM —</div>
-
-            {/* Rarity filter pills */}
             <div style={{ display:"flex", flexWrap:"wrap", gap:4, justifyContent:"center", marginBottom:14 }}>
               {(["all", ...RARITY_ORDER] as const).map(r => {
                 const color = r === "all" ? "#888" : RARITY_COLORS[r as Rarity];
                 const active = rarityFilter === r;
                 return (
                   <button key={r} onClick={()=>setRarityFilter(r)}
-                    style={{ background:active?`${color}22`:"transparent", border:`1px solid ${active?color:color+"44"}`, color:active?color:color+"88", padding: isMobile ? "4px 7px" : "4px 10px", fontSize: isMobile ? 4 : 5, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:0.5, transition:"all 0.12s", borderRadius:0 }}>
+                    style={{ background:active?`${color}22`:"transparent", border:`1px solid ${active?color:color+"44"}`, color:active?color:color+"88", padding: isMobile ? "4px 7px" : "4px 10px", fontSize: isMobile ? 4 : 5, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:0.5, transition:"all 0.12s" }}>
                     {r === "all" ? "ALL" : RARITY_LABELS[r as Rarity]}
                   </button>
                 );
               })}
             </div>
-
-            {/* Card grid */}
             <div style={{ display:"grid", gridTemplateColumns: isMobile ? "repeat(3,1fr)" : "repeat(4,1fr)", gap: isMobile ? 6 : 8, maxHeight: isMobile ? "40vh" : "45vh", overflowY:"auto", paddingRight:4 }}>
-              {filteredCards.map(id => {
+              {(rarityFilter === "all" ? Object.keys(CARD_DEFS) as CardId[] : (Object.keys(CARD_DEFS) as CardId[]).filter(id => CARD_DEFS[id].rarity === rarityFilter)).map(id => {
                 const def = CARD_DEFS[id];
                 const isSelected = selectedCard === id;
                 return (
@@ -384,22 +381,20 @@ function Lobby({
                 );
               })}
             </div>
-
-            {/* Selected card detail */}
-            {selectedCard && selectedDef && (
-              <div style={{ marginTop:12, background:"#050510", border:`2px solid ${selectedDef.color}`, padding: isMobile ? "12px" : "16px", animation:"slideUp 0.2s ease", position:"relative" }}>
-                <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:RARITY_COLORS[selectedDef.rarity], boxShadow:`0 0 6px ${RARITY_COLORS[selectedDef.rarity]}` }}/>
+            {selectedCard && CARD_DEFS[selectedCard] && (
+              <div style={{ marginTop:12, background:"#050510", border:`2px solid ${CARD_DEFS[selectedCard].color}`, padding: isMobile ? "12px" : "16px", position:"relative" }}>
+                <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:RARITY_COLORS[CARD_DEFS[selectedCard].rarity], boxShadow:`0 0 6px ${RARITY_COLORS[CARD_DEFS[selectedCard].rarity]}` }}/>
                 <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
-                  <span style={{ fontSize: isMobile ? 24 : 28, filter:`drop-shadow(0 0 6px ${selectedDef.glowColor})` }}>{selectedDef.icon}</span>
+                  <span style={{ fontSize: isMobile ? 24 : 28, filter:`drop-shadow(0 0 6px ${CARD_DEFS[selectedCard].glowColor})` }}>{CARD_DEFS[selectedCard].icon}</span>
                   <div>
-                    <div style={{ fontSize: isMobile ? 7 : 8, color:selectedDef.color, letterSpacing:1, marginBottom:4 }}>{selectedDef.name}</div>
-                    <span style={{ fontSize: isMobile ? 5 : 6, color:RARITY_COLORS[selectedDef.rarity], background:`${RARITY_COLORS[selectedDef.rarity]}18`, border:`1px solid ${RARITY_COLORS[selectedDef.rarity]}44`, padding:"2px 6px", letterSpacing:1 }}>
-                      {RARITY_LABELS[selectedDef.rarity]}
+                    <div style={{ fontSize: isMobile ? 7 : 8, color:CARD_DEFS[selectedCard].color, letterSpacing:1, marginBottom:4 }}>{CARD_DEFS[selectedCard].name}</div>
+                    <span style={{ fontSize: isMobile ? 5 : 6, color:RARITY_COLORS[CARD_DEFS[selectedCard].rarity], border:`1px solid ${RARITY_COLORS[CARD_DEFS[selectedCard].rarity]}44`, padding:"2px 6px" }}>
+                      {RARITY_LABELS[CARD_DEFS[selectedCard].rarity]}
                     </span>
                   </div>
                 </div>
-                <div style={{ fontSize: isMobile ? 6 : 7, color:"#ccc", lineHeight:2.2, letterSpacing:0.3 }}>{selectedDef.description}</div>
-                <button onClick={()=>setSelectedCard(null)} style={{ position:"absolute", top:8, right:8, background:"transparent", border:"none", color:"#333", fontSize:10, cursor:"pointer", fontFamily:"'Press Start 2P',monospace" }}>✕</button>
+                <div style={{ fontSize: isMobile ? 6 : 7, color:"#ccc", lineHeight:2.2, letterSpacing:0.3 }}>{CARD_DEFS[selectedCard].description}</div>
+                <button onClick={()=>setSelectedCard(null)} style={{ position:"absolute", top:8, right:8, background:"transparent", border:"none", color:"#555", fontSize:10, cursor:"pointer", fontFamily:"'Press Start 2P',monospace" }}>✕</button>
               </div>
             )}
           </div>
@@ -410,7 +405,6 @@ function Lobby({
       <div style={{ marginTop:12, fontSize:5, color:"#1e1e2e", letterSpacing:2, zIndex:2 }}>★ KRAM KARD v1.4 ★</div>
     </div>
   );
-}
 
 // ─── HP Bar ───────────────────────────────────────────────────────────────────
 function HPBar({ hp, maxHp, compact }: { hp: number; maxHp: number; compact?: boolean }) {
