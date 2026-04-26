@@ -178,7 +178,7 @@ return (
     <div style={{ position:"fixed", inset:0, zIndex:50, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", fontFamily:"'Press Start 2P', monospace", padding: isMobile ? 10 : 20, overflowY:"auto" }}>
       <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:1, background:"repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,0.07) 2px,rgba(0,0,0,0.07) 4px)" }} />
 
-      <div style={{ position:"relative", zIndex:2, background:"linear-gradient(160deg,#07070f 0%,#0b0b18 60%,#080812 100%)", border:"2px solid #f9ca24", width:"100%", maxWidth: isMobile ? "100%" : 500, boxShadow:"0 0 0 1px #f9ca2422,0 0 40px #f9ca2418,inset 0 0 60px #00000066", overflow:"hidden", marginTop: isMobile ? 40 : 0 }}>
+      <div style={{ position:"relative", zIndex:2, background:"linear-gradient(160deg,#07070f 0%,#0b0b18 60%,#080812 100%)", border:"2px solid #f9ca24", width:"100%", maxWidth: isMobile ? "100%" : 660, boxShadow:"0 0 0 1px #f9ca2422,0 0 40px #f9ca2418,inset 0 0 60px #00000066", overflow:"hidden", marginTop: isMobile ? 40 : 0 }}>
         <div style={{ position:"absolute", top:-3, left:-3, width:10, height:10, background:"#f9ca24", boxShadow:"0 0 8px #f9ca24" }} />
         <div style={{ position:"absolute", top:-3, right:-3, width:10, height:10, background:"#f9ca24", boxShadow:"0 0 8px #f9ca24" }} />
         <div style={{ position:"absolute", bottom:-3, left:-3, width:10, height:10, background:"#f9ca24", boxShadow:"0 0 8px #f9ca24" }} />
@@ -187,8 +187,8 @@ return (
 
         {/* Header */}
         <div style={{ textAlign:"center", padding: isMobile ? "20px 20px 14px" : "28px 40px 18px" }}>
-          <div style={{ fontSize:6, color:"#a55eea", letterSpacing:5, marginBottom:8, animation:"blink 2s step-end infinite" }}>★ COSMIC ARENA ★</div>
-          <div style={{ fontSize: isMobile ? 22 : 28, color:"#f9ca24", letterSpacing:6, textShadow:"0 0 12px #f9ca24aa,0 0 30px #f9ca2444", marginBottom:6 }}>KRAM KARD</div>
+          <div style={{ fontSize:8, color:"#a55eea", letterSpacing:5, marginBottom:8, animation:"blink 2s step-end infinite" }}>★ COSMIC ARENA ★</div>
+          <div style={{ fontSize: isMobile ? 28 : 36, color:"#f9ca24", letterSpacing:6, textShadow:"0 0 12px #f9ca24aa,0 0 30px #f9ca2444", marginBottom:6 }}>KRAM KARD</div>
           <div style={{ display:"flex", justifyContent:"center", gap:3, marginBottom:4 }}>
             {["#f9ca24","#fc5c65","#26de81","#45aaf2","#a55eea","#45aaf2","#26de81","#fc5c65","#f9ca24"].map((c,i)=>(
               <div key={i} style={{ width:4, height:4, background:c, opacity:0.6 }}/>
@@ -217,7 +217,7 @@ return (
             {mode === "main" && (<>
               <div style={{ fontSize:6, color:"#444", letterSpacing:3, marginBottom:20 }}>— SELECT MODE —</div>
               <button onClick={handleCreate} onMouseEnter={()=>setHoveredBtn("create")} onMouseLeave={()=>setHoveredBtn(null)}
-                style={{ width:"100%", background:hoveredBtn==="create"?"linear-gradient(135deg,#f9ca2418,#f9ca2408)":"transparent", border:`2px solid ${hoveredBtn==="create"?"#f9ca24":"#f9ca2477"}`, color:"#f9ca24", padding:"16px 0", fontSize:8, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:2, marginBottom:14, transition:"all 0.12s", boxShadow:hoveredBtn==="create"?"0 0 16px #f9ca2433,inset 0 0 20px #f9ca2408":"none" }}>
+                style={{ width:"100%", background:hoveredBtn==="create"?"linear-gradient(135deg,#f9ca2418,#f9ca2408)":"transparent", border:`2px solid ${hoveredBtn==="create"?"#f9ca24":"#f9ca2477"}`, color:"#f9ca24", padding:"16px 0", fontSize:10, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:2, marginBottom:18, transition:"all 0.12s", boxShadow:hoveredBtn==="create"?"0 0 16px #f9ca2433,inset 0 0 20px #f9ca2408":"none" }}>
                 <span style={{ marginRight:8, fontSize:10 }}>✦</span>CREATE ROOM
               </button>
               <button onClick={()=>{setMode("join");setError("");}} onMouseEnter={()=>setHoveredBtn("join")} onMouseLeave={()=>setHoveredBtn(null)}
@@ -268,11 +268,11 @@ return (
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
                 <div style={{ display:"flex", padding:"6px 8px", borderBottom:"1px solid #1a1a2e", marginBottom:4 }}>
-                  <span style={{ fontSize:5, color:"#333", width:24 }}>#</span>
-                  <span style={{ fontSize:5, color:"#333", flex:1 }}>NAME</span>
-                  <span style={{ fontSize:5, color:"#333", width:40, textAlign:"right" }}>W</span>
-                  <span style={{ fontSize:5, color:"#333", width:40, textAlign:"right" }}>L</span>
-                  <span style={{ fontSize:5, color:"#333", width:48, textAlign:"right" }}>RATE</span>
+                  <span style={{ fontSize:7, color:"#333", width:24 }}>#</span>
+                  <span style={{ fontSize:7, color:"#333", flex:1 }}>NAME</span>
+                  <span style={{ fontSize:7, color:"#333", width:40, textAlign:"right" }}>W</span>
+                  <span style={{ fontSize:7, color:"#333", width:40, textAlign:"right" }}>L</span>
+                  <span style={{ fontSize:7, color:"#333", width:48, textAlign:"right" }}>RATE</span>
                 </div>
                 {leaderboard.map((e, i) => {
                   const total = e.wins + e.losses;
@@ -282,10 +282,10 @@ return (
                   return (
                     <div key={e.sessionToken} style={{ display:"flex", alignItems:"center", padding:"8px", background:i%2===0?"#ffffff04":"transparent", borderLeft:`2px solid ${rankColor}22` }}>
                       <span style={{ fontSize:i<3?9:6, width:24, color:rankColor }}>{i<3?medals[i]:i+1}</span>
-                      <span style={{ fontSize:6, flex:1, color:i<3?"#ddd":"#777", letterSpacing:0.5, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.name.toUpperCase()}</span>
-                      <span style={{ fontSize:6, width:40, textAlign:"right", color:"#26de81" }}>{e.wins}</span>
-                      <span style={{ fontSize:6, width:40, textAlign:"right", color:"#fc5c65" }}>{e.losses}</span>
-                      <span style={{ fontSize:6, width:48, textAlign:"right", color:rate>=60?"#f9ca24":rate>=40?"#aaa":"#555" }}>{rate}%</span>
+                      <span style={{ fontSize:8, flex:1, color:i<3?"#ddd":"#777", letterSpacing:0.5, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.name.toUpperCase()}</span>
+                      <span style={{ fontSize:6, width:50, textAlign:"right", color:"#26de81" }}>{e.wins}</span>
+                      <span style={{ fontSize:6, width:50, textAlign:"right", color:"#fc5c65" }}>{e.losses}</span>
+                      <span style={{ fontSize:6, width:56, textAlign:"right", color:rate>=60?"#f9ca24":rate>=40?"#aaa":"#555" }}>{rate}%</span>
                     </div>
                   );
                 })}
@@ -297,42 +297,42 @@ return (
 
         {/* CARDS TAB */}
         {tab === "cards" && (
-          <div style={{ padding: isMobile ? "12px 10px 20px" : "16px 20px 24px" }}>
-            <div style={{ fontSize:6, color:"#45aaf2", letterSpacing:3, marginBottom:12, textAlign:"center" }}>— CARD COMPENDIUM —</div>
+          <div style={{ padding: isMobile ? "12px 10px 20px" : "16px 20px 24px", maxHeight: isMobile ? "85vh" : "70vh", overflowY: "auto" }}>
+            <div style={{ fontSize:8, color:"#45aaf2", letterSpacing:3, marginBottom:12, textAlign:"center" }}>— CARD COMPENDIUM —</div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:4, justifyContent:"center", marginBottom:14 }}>
               {(["all", ...RARITY_ORDER] as const).map(r => {
                 const color = r === "all" ? "#888" : RARITY_COLORS[r as Rarity];
                 const active = rarityFilter === r;
                 return (
                   <button key={r} onClick={()=>setRarityFilter(r)}
-                    style={{ background:active?`${color}22`:"transparent", border:`1px solid ${active?color:color+"44"}`, color:active?color:color+"88", padding: isMobile ? "4px 7px" : "4px 10px", fontSize: isMobile ? 4 : 5, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:0.5, transition:"all 0.12s" }}>
+                    style={{ background:active?`${color}22`:"transparent", border:`1px solid ${active?color:color+"44"}`, color:active?color:color+"88", padding: isMobile ? "4px 7px" : "4px 10px", fontSize: isMobile ? 6 : 7, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:0.5, transition:"all 0.12s" }}>
                     {r === "all" ? "ALL" : RARITY_LABELS[r as Rarity]}
                   </button>
                 );
               })}
             </div>
-            <div style={{ display:"grid", gridTemplateColumns: isMobile ? "repeat(3,1fr)" : "repeat(4,1fr)", gap: isMobile ? 6 : 8, maxHeight: isMobile ? "40vh" : "45vh", overflowY:"auto", paddingRight:4 }}>
+            <div style={{ display:"grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(3,1fr)", gap: isMobile ? 8 : 10, maxHeight: isMobile ? "38vh" : "42vh", overflowY:"auto", paddingRight:4 }}>
               {(rarityFilter === "all" ? Object.keys(CARD_DEFS) as CardId[] : (Object.keys(CARD_DEFS) as CardId[]).filter(id => CARD_DEFS[id].rarity === rarityFilter)).map(id => {
                 const def = CARD_DEFS[id];
                 const isSelected = selectedCard === id;
                 return (
                   <button key={id} onClick={()=>setSelectedCard(isSelected?null:id)}
                     style={{ background:isSelected?`${def.color}18`:def.bgColor, border:`1.5px solid ${isSelected?def.color:def.color+"55"}`, padding: isMobile ? "8px 4px" : "10px 6px", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:4, transition:"all 0.12s", boxShadow:isSelected?`0 0 10px ${def.glowColor}55`:"none", fontFamily:"'Press Start 2P',monospace" }}>
-                    <span style={{ fontSize: isMobile ? 16 : 20, filter:`drop-shadow(0 0 4px ${def.glowColor})` }}>{def.icon}</span>
-                    <span style={{ fontSize: isMobile ? 4 : 5, color:def.color, lineHeight:1.6, textAlign:"center", letterSpacing:0.3 }}>{def.name}</span>
-                    <span style={{ fontSize: isMobile ? 3 : 4, color:RARITY_COLORS[def.rarity], letterSpacing:0.5 }}>{RARITY_LABELS[def.rarity]}</span>
+                    <span style={{ fontSize: isMobile ? 24 : 26, filter:`drop-shadow(0 0 4px ${def.glowColor})` }}>{def.icon}</span>
+                    <span style={{ fontSize: isMobile ? 6 : 6 , color:def.color, lineHeight:1.6, textAlign:"center", letterSpacing:0.3 }}>{def.name}</span>
+                    <span style={{ fontSize: isMobile ? 5 : 5, color:RARITY_COLORS[def.rarity], letterSpacing:0.5 }}>{RARITY_LABELS[def.rarity]}</span>
                   </button>
                 );
               })}
             </div>
             {selectedCard && CARD_DEFS[selectedCard] && (
-              <div style={{ marginTop:12, background:"#050510", border:`2px solid ${CARD_DEFS[selectedCard].color}`, padding: isMobile ? "12px" : "16px", position:"relative" }}>
+              <div style={{ marginTop:12, background:"#050510", border:`2px solid ${CARD_DEFS[selectedCard].color}`, padding: isMobile ? "12px" : "16px", position:"relative", maxHeight: isMobile ? "30vh" : "auto", overflowY: isMobile ? "auto" : "visible" }}>
                 <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:RARITY_COLORS[CARD_DEFS[selectedCard].rarity], boxShadow:`0 0 6px ${RARITY_COLORS[CARD_DEFS[selectedCard].rarity]}` }}/>
                 <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
                   <span style={{ fontSize: isMobile ? 24 : 28, filter:`drop-shadow(0 0 6px ${CARD_DEFS[selectedCard].glowColor})` }}>{CARD_DEFS[selectedCard].icon}</span>
                   <div>
                     <div style={{ fontSize: isMobile ? 7 : 8, color:CARD_DEFS[selectedCard].color, letterSpacing:1, marginBottom:4 }}>{CARD_DEFS[selectedCard].name}</div>
-                    <span style={{ fontSize: isMobile ? 5 : 6, color:RARITY_COLORS[CARD_DEFS[selectedCard].rarity], border:`1px solid ${RARITY_COLORS[CARD_DEFS[selectedCard].rarity]}44`, padding:"2px 6px" }}>
+                    <span style={{ fontSize: isMobile ? 7 : 9, color:RARITY_COLORS[CARD_DEFS[selectedCard].rarity], border:`1px solid ${RARITY_COLORS[CARD_DEFS[selectedCard].rarity]}44`, padding:"2px 6px" }}>
                       {RARITY_LABELS[CARD_DEFS[selectedCard].rarity]}
                     </span>
                   </div>
@@ -630,7 +630,7 @@ function MobileLogDrawer({ log }: { log: string[] }) {
         transition: "max-height 0.3s ease",
         fontFamily: "'Press Start 2P',monospace",
       }}>
-        <div style={{ padding:"7px 10px", borderBottom:"1px solid #1a1a2e", fontSize:6, color:"#a55eea", letterSpacing:2, background:"#0a0a18", display:"flex", justifyContent:"space-between" }}>
+        <div style={{ padding:"7px 10px", borderBottom:"1px solid #1a1a2e", fontSize:8, color:"#a55eea", letterSpacing:2, background:"#0a0a18", display:"flex", justifyContent:"space-between" }}>
           <span>▐ BATTLE LOG</span>
           <button onClick={() => setOpen(false)} style={{ background:"transparent", border:"none", color:"#555", fontSize:7, cursor:"pointer", fontFamily:"'Press Start 2P',monospace" }}>✕</button>
         </div>
