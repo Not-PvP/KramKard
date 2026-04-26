@@ -47,27 +47,25 @@ async function getLeaderboard(): Promise<LeaderboardEntry[]> {
 
 // ── Card types ────────────────────────────────────────────────────
 export type CardId =
-  // Common
   | "slash" | "weak_jab" | "fumble"
-  // Uncommon
   | "heavy_blow" | "heal" | "shield" | "poison_dart" | "taunt"
   | "mana_burn" | "ice_spike" | "regen"
-  // Rare
   | "gamble" | "steal" | "divine_shield" | "double_strike"
   | "vampire_bite" | "earthquake" | "berserker" | "ghost_step"
   | "reflect" | "lucky_shot" | "counter_stance" | "mana_surge"
   | "pickpocket" | "explosion"
-  // Cursed
   | "cursed_blade" | "blood_pact"
-  // Corrupted
   | "cursed_heal" | "betrayal" | "plague" | "sacrifice"
-  // Legendary
   | "freeze" | "divine_retribution" | "titans_wrath" | "last_stand"
   | "lightning_storm" | "meteor"
-  // Mythic
-  | "soul_swap" | "armageddon" | "void_rift" | "judgement";
+  | "soul_swap" | "armageddon" | "void_rift" | "judgement"
+  | "singularity" | "dark_matter" | "event_horizon" | "neutron_star"
+  // New cards (chain_lightning & debt_collector removed/replaced)
+  | "hand_swap" | "overflow" | "time_warp"
+  | "shockwave" | "curse_tax"
+  | "cursed_mirror" | "void_pulse";
 
-export type Rarity = "common" | "uncommon" | "rare" | "cursed" | "corrupted" | "legendary" | "mythic";
+export type Rarity = "common" | "uncommon" | "rare" | "cursed" | "corrupted" | "legendary" | "mythic" | "void";
 
 export const CARD_NAMES: Record<CardId, string> = {
   slash: "Slash", weak_jab: "Weak Jab", fumble: "Fumble",
@@ -84,11 +82,36 @@ export const CARD_NAMES: Record<CardId, string> = {
   freeze: "Freeze", divine_retribution: "Divine Retribution", titans_wrath: "Titan's Wrath",
   last_stand: "Last Stand", lightning_storm: "Lightning Storm", meteor: "Meteor",
   soul_swap: "Soul Swap", armageddon: "Armageddon", void_rift: "Void Rift", judgement: "Judgement",
+  singularity: "Singularity", dark_matter: "Dark Matter", event_horizon: "Event Horizon", neutron_star: "Neutron Star",
+  hand_swap: "Hand Swap", overflow: "Overflow", time_warp: "Time Warp",
+  shockwave: "Shockwave", curse_tax: "Curse Tax",
+  cursed_mirror: "Cursed Mirror", void_pulse: "Void Pulse",
+};
+
+// Rarity ordering for curse_tax heal scaling
+const RARITY_HEAL: Record<string, number> = {
+  common: 5, uncommon: 10, rare: 15, cursed: 20, corrupted: 22, legendary: 28, mythic: 32, void: 35,
+};
+const CARD_RARITIES: Record<CardId, string> = {
+  slash: "common", weak_jab: "common", fumble: "common",
+  heavy_blow: "uncommon", heal: "uncommon", shield: "uncommon", poison_dart: "uncommon",
+  taunt: "uncommon", mana_burn: "uncommon", ice_spike: "uncommon", regen: "uncommon",
+  gamble: "rare", steal: "rare", divine_shield: "rare", double_strike: "rare",
+  vampire_bite: "rare", earthquake: "rare", berserker: "rare", ghost_step: "rare",
+  reflect: "rare", lucky_shot: "rare", counter_stance: "rare", mana_surge: "rare",
+  pickpocket: "rare", explosion: "rare", shockwave: "rare",
+  cursed_blade: "cursed", blood_pact: "cursed",
+  cursed_heal: "corrupted", betrayal: "corrupted", plague: "corrupted", sacrifice: "corrupted",
+  hand_swap: "corrupted", cursed_mirror: "corrupted", curse_tax: "corrupted",
+  freeze: "legendary", divine_retribution: "legendary", titans_wrath: "legendary",
+  last_stand: "legendary", lightning_storm: "legendary", meteor: "legendary", overflow: "legendary",
+  soul_swap: "mythic", armageddon: "mythic", void_rift: "mythic", judgement: "mythic", time_warp: "mythic",
+  singularity: "void", dark_matter: "void", event_horizon: "void", neutron_star: "void", void_pulse: "void",
 };
 
 // ── Draw pool (weighted) ──────────────────────────────────────────
 const DRAW_POOL: CardId[] = [
-  // Common — most frequent
+  // Common
   "slash","slash","slash","slash","slash",
   "weak_jab","weak_jab","weak_jab",
   "fumble","fumble",
@@ -116,6 +139,7 @@ const DRAW_POOL: CardId[] = [
   "mana_surge",
   "pickpocket",
   "explosion",
+  "shockwave",           // replaces chain_lightning
   // Cursed
   "cursed_blade",
   "blood_pact",
@@ -124,6 +148,9 @@ const DRAW_POOL: CardId[] = [
   "betrayal",
   "plague",
   "sacrifice",
+  "hand_swap",
+  "cursed_mirror",
+  "curse_tax",           // replaces debt_collector
   // Legendary
   "freeze",
   "divine_retribution",
@@ -131,11 +158,19 @@ const DRAW_POOL: CardId[] = [
   "last_stand",
   "lightning_storm",
   "meteor",
-  // Mythic — ultra rare
+  "overflow",
+  // Mythic
   "soul_swap",
   "armageddon",
   "void_rift",
   "judgement",
+  "time_warp",
+  // Void
+  "singularity",
+  "dark_matter",
+  "event_horizon",
+  "neutron_star",
+  "void_pulse",
 ];
 
 function drawOne(exclude: CardId[] = []): CardId {
@@ -166,7 +201,15 @@ interface Player {
   skipTurns: number;
   taunted: boolean;
   extraTurn: boolean;
+  extraTurnDebt: number;
   stunsSuffered: number;
+  stunCooldown: number;
+  darkMatterStacks: number;
+  eventHorizonActive: boolean;
+  neutronStarTicks: number;
+  healBlocked: number;       // turns remaining where heals are blocked (freeze debuff)
+  overflowDiscard: number;
+  overflowCount: number;
   lastCard: CardId | null;
   hand: CardId[];
   rematchReady: boolean;
@@ -236,12 +279,22 @@ function replenishCard(player: Player) {
 }
 
 function dealDamage(room: Room, actor: Player, target: Player, dmg: number, source: string, bypassShield = false): number {
-  // Counter stance check
+  if (target.eventHorizonActive) {
+    target.eventHorizonActive = false;
+    target.hp = Math.max(0, target.hp - dmg);
+    addLog(room, `🌑 EVENT HORIZON! ${target.name}'s ${source} energy collapses inward — ${dmg} damage to THEMSELVES!`);
+    return -2;
+  }
+  if (target.darkMatterStacks > 0) {
+    target.darkMatterStacks--;
+    addLog(room, `🫧 DARK MATTER absorbs ${source}! (${target.darkMatterStacks} stacks left)`);
+    return 0;
+  }
   if (target.counterStanceActive && !bypassShield) {
     target.counterStanceActive = false;
     const reflected = dmg;
     actor.hp = Math.max(0, actor.hp - reflected);
-    target.hp = Math.max(0, target.hp - 5); // still takes a bit
+    target.hp = Math.max(0, target.hp - 5);
     addLog(room, `🔄 ${target.name}'s COUNTER STANCE reflects ${reflected} damage + deals 5 bonus!`);
     return -1;
   }
@@ -256,7 +309,6 @@ function dealDamage(room: Room, actor: Player, target: Player, dmg: number, sour
     addLog(room, `🔮 ${target.name} REFLECTED ${dmg} damage back at ${actor.name}!`);
     return -1;
   }
-  // Mana surge doubles damage
   const finalDmg = actor.manaSurgeActive ? dmg * 2 : dmg;
   if (actor.manaSurgeActive) {
     actor.manaSurgeActive = false;
@@ -264,6 +316,26 @@ function dealDamage(room: Room, actor: Player, target: Player, dmg: number, sour
   }
   target.hp = Math.max(0, target.hp - finalDmg);
   return finalDmg;
+}
+
+function applyHeal(room: Room, player: Player, amount: number): number {
+  if (player.healBlocked > 0) {
+    addLog(room, `❄ ${player.name}'s healing is FROZEN — ${amount} HP blocked!`);
+    return 0;
+  }
+  const before = player.hp;
+  player.hp = Math.min(player.maxHp, player.hp + amount);
+  return player.hp - before;
+}
+
+function applyStun(room: Room, actor: Player, target: Player, turns: number): boolean {
+  if (actor.stunCooldown > 0) {
+    addLog(room, `⚠ ${actor.name}'s stun is on cooldown (${actor.stunCooldown} turn(s))! ${target.name} resists.`);
+    return false;
+  }
+  target.skipTurns = Math.max(target.skipTurns, turns);
+  actor.stunCooldown = 2;
+  return true;
 }
 
 function checkDeath(room: Room, actorToken: string, targetToken: string): boolean {
@@ -289,6 +361,12 @@ function startTurn(room: Room, token: string) {
   const player = room.players[token];
   if (!player) return;
 
+  if (player.extraTurnDebt > 0 && player.skipTurns === 0) {
+    player.skipTurns = player.extraTurnDebt;
+    player.extraTurnDebt = 0;
+    addLog(room, `⏳ ${player.name}'s TIME WARP debt kicks in — skipping ${player.skipTurns} turn(s)!`);
+  }
+
   if (player.skipTurns > 0) {
     player.skipTurns--;
     player.stunsSuffered++;
@@ -298,15 +376,45 @@ function startTurn(room: Room, token: string) {
     return;
   }
 
-  // Regen
+  if (player.stunCooldown > 0) {
+    player.stunCooldown--;
+    if (player.stunCooldown === 0) addLog(room, `⚡ ${player.name}'s stun cooldown expired — stun cards ready!`);
+  }
+
+  if (player.healBlocked > 0) {
+    player.healBlocked--;
+    if (player.healBlocked === 0) addLog(room, `🌡 ${player.name}'s heal block has worn off!`);
+  }
+
+  if (player.overflowDiscard > 0) {
+    player.overflowDiscard--;
+    if (player.overflowDiscard === 0 && player.overflowCount > 0) {
+      const discardCount = Math.min(player.overflowCount, player.hand.length);
+      const discarded: string[] = [];
+      for (let i = 0; i < discardCount; i++) {
+        const ridx = Math.floor(Math.random() * player.hand.length);
+        discarded.push(CARD_NAMES[player.hand.splice(ridx, 1)[0] as CardId]);
+      }
+      player.overflowCount = 0;
+      addLog(room, `🃏 OVERFLOW DEBT: ${player.name} discards ${discarded.join(", ")}!`);
+    }
+  }
+
+  if (player.neutronStarTicks > 0) {
+    player.hp = Math.max(0, player.hp - 10);
+    player.neutronStarTicks--;
+    addLog(room, `⭐ NEUTRON STAR deals 10 delayed damage to ${player.name}! (${player.neutronStarTicks} ticks left)`);
+    const oppToken = getOpponentToken(room, token);
+    if (player.hp <= 0 && oppToken) { endGame(room, oppToken); return; }
+  }
+
   if (player.regenStacks > 0) {
     const regen = player.regenStacks * 3;
-    player.hp = Math.min(player.maxHp, player.hp + regen);
-    addLog(room, `💚 ${player.name} regenerates ${regen} HP!`);
+    const healed = applyHeal(room, player, regen);
+    if (healed > 0) addLog(room, `💚 ${player.name} regenerates ${healed} HP!`);
     player.regenStacks = Math.max(0, player.regenStacks - 1);
   }
 
-  // Poison
   if (player.poisoned > 0) {
     player.hp = Math.max(0, player.hp - player.poisoned);
     addLog(room, `☠ ${player.name} takes ${player.poisoned} poison damage!`);
@@ -315,7 +423,6 @@ function startTurn(room: Room, token: string) {
     if (player.hp <= 0 && oppToken) { endGame(room, oppToken); return; }
   }
 
-  // Plague
   if (player.plagueStacks > 0) {
     player.hp = Math.max(0, player.hp - 8);
     player.plagueStacks--;
@@ -353,7 +460,6 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     }
     case "fumble": {
       const d = dealDamage(room, actor, target, 5, "fumble");
-      // Lose a random card from hand
       if (actor.hand.length > 0) {
         const ridx = Math.floor(Math.random() * actor.hand.length);
         const lost = actor.hand.splice(ridx, 1)[0];
@@ -365,19 +471,36 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       }
       break;
     }
+
     // ── UNCOMMON ────────────────────────────────────────────────
     case "heavy_blow": {
       const d = dealDamage(room, actor, target, 22, "heavy blow");
-      if (d > 0) { addLog(room, `💥 HEAVY BLOW — ${d} damage!`); narration = `${actor.name} winds up and SMASHES ${target.name} for ${d} damage! Exhausted after...`; }
-      actor.skipTurns = Math.max(actor.skipTurns, 1);
-      addLog(room, `😵 ${actor.name} is exhausted — skips next turn.`);
+      if (d > 0) {
+        if (Math.random() < 0.5) {
+          const stunned = applyStun(room, actor, target, 1);
+          if (stunned) {
+            addLog(room, `💥 HEAVY BLOW — ${d} damage + STUN! (50% luck)`);
+            narration = `${actor.name} winds up and SMASHES ${target.name} for ${d} damage! The blow STUNS them! Lucky hit!`;
+          } else {
+            addLog(room, `💥 HEAVY BLOW — ${d} damage (stun on cooldown)`);
+            narration = `${actor.name} smashes for ${d} damage! The stun would've landed but it's on cooldown.`;
+          }
+        } else {
+          addLog(room, `💥 HEAVY BLOW — ${d} damage (no stun this time)`);
+          narration = `${actor.name} winds up and smashes for ${d} damage! The stun didn't proc this time.`;
+        }
+      }
       break;
     }
     case "heal": {
-      const before = actor.hp;
-      actor.hp = Math.min(actor.maxHp, actor.hp + 20);
-      addLog(room, `♥ ${actor.name} healed ${actor.hp - before} HP!`);
-      narration = `${actor.name} mends their wounds, recovering ${actor.hp - before} HP!`;
+      const healed = applyHeal(room, actor, 20);
+      if (healed > 0) {
+        addLog(room, `♥ ${actor.name} healed ${healed} HP!`);
+        narration = `${actor.name} mends their wounds, recovering ${healed} HP!`;
+      } else {
+        addLog(room, `♥ ${actor.name} tried to heal but it was blocked!`);
+        narration = `${actor.name} reaches for healing energy... but it's FROZEN — they recover nothing!`;
+      }
       break;
     }
     case "shield": {
@@ -414,9 +537,17 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     case "ice_spike": {
       const d = dealDamage(room, actor, target, 12, "ice spike");
       if (d > 0) {
-        target.skipTurns = Math.max(target.skipTurns, 1);
-        addLog(room, `🧊 ICE SPIKE — ${d} DMG + stunned!`);
-        narration = `${actor.name} launches an ice spike! ${target.name} takes ${d} damage and is FROZEN!`;
+        const stunned = applyStun(room, actor, target, 1);
+        if (stunned) {
+          addLog(room, `🧊 ICE SPIKE — ${d} DMG + stunned 1 turn! (2-turn cooldown)`);
+          narration = `${actor.name} launches an ice spike! ${target.name} takes ${d} damage and is FROZEN!`;
+        } else {
+          addLog(room, `🧊 ICE SPIKE — ${d} DMG (stun on cooldown!)`);
+          narration = `${actor.name} launches an ice spike for ${d} damage, but the stun is on cooldown!`;
+        }
+      } else if (d === 0) {
+        addLog(room, `🧊 Ice Spike blocked by shield!`);
+        narration = `${actor.name}'s ice spike shatters against ${target.name}'s shield!`;
       }
       break;
     }
@@ -426,6 +557,7 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       narration = `${actor.name} activates REGEN — recovering ${actor.regenStacks * 3} HP per turn for 3 turns!`;
       break;
     }
+
     // ── RARE ────────────────────────────────────────────────────
     case "gamble": {
       if (Math.random() < 0.5) {
@@ -454,9 +586,9 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     }
     case "divine_shield": {
       actor.shield = true;
-      actor.hp = Math.min(actor.maxHp, actor.hp + 10);
-      addLog(room, `✦ DIVINE SHIELD — shield + 10 HP!`);
-      narration = `${actor.name} bathes in divine light! Shield + 10 HP restored.`;
+      const divHealed = applyHeal(room, actor, 10);
+      addLog(room, `✦ DIVINE SHIELD — shield + ${divHealed} HP!`);
+      narration = `${actor.name} bathes in divine light! Shield + ${divHealed} HP restored.`;
       break;
     }
     case "double_strike": {
@@ -472,9 +604,9 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       const d = dealDamage(room, actor, target, 14, "vampire bite");
       if (d > 0) {
         const stolen = Math.floor(d / 2);
-        actor.hp = Math.min(actor.maxHp, actor.hp + stolen);
-        addLog(room, `🧛 VAMPIRE BITE — ${d} drained, +${stolen} HP!`);
-        narration = `${actor.name} sinks their fangs! Drains ${d} HP and restores ${stolen} to themselves!`;
+        const healed = applyHeal(room, actor, stolen);
+        addLog(room, `🧛 VAMPIRE BITE — ${d} drained, +${healed} HP!`);
+        narration = `${actor.name} sinks their fangs! Drains ${d} HP and restores ${healed} to themselves!`;
       }
       break;
     }
@@ -543,7 +675,6 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     }
     case "explosion": {
       const d = dealDamage(room, actor, target, 25, "explosion");
-      // Destroy a random card from own hand too
       if (actor.hand.length > 0) {
         const ridx = Math.floor(Math.random() * actor.hand.length);
         const lost = actor.hand.splice(ridx, 1)[0] as CardId;
@@ -551,15 +682,33 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
         narration = `${actor.name} detonates an explosion for ${d > 0 ? d : 0} damage! But the blast destroys ${CARD_NAMES[lost]} in their own hand!`;
       } else {
         addLog(room, `💣 EXPLOSION — ${d > 0 ? d : 0} damage!`);
+        narration = `${actor.name} detonates for ${d > 0 ? d : 0} damage!`;
       }
       break;
     }
+    // NEW RARE: replaces chain_lightning — combo punisher, rewards stuns
+    case "shockwave": {
+      const isStunned = target.skipTurns > 0;
+      const baseDmg = 20;
+      const bonusDmg = isStunned ? 20 : 0;
+      const d = dealDamage(room, actor, target, baseDmg + bonusDmg, "shockwave");
+      if (isStunned) {
+        addLog(room, `🌊 SHOCKWAVE — ${d > 0 ? d : 0} damage! BONUS hit vs stunned foe!`);
+        narration = `${actor.name} sends a shockwave crashing through ${target.name}! They're stunned — the wave hits for ${d > 0 ? d : 0} CRUSHING damage!`;
+      } else {
+        addLog(room, `🌊 SHOCKWAVE — ${d > 0 ? d : 0} damage (no stun bonus)`);
+        narration = `${actor.name} fires a shockwave for ${d > 0 ? d : 0} damage. Would've hit harder if ${target.name} was stunned!`;
+      }
+      break;
+    }
+
     // ── CURSED ──────────────────────────────────────────────────
     case "cursed_blade": {
       const d = dealDamage(room, actor, target, 40, "cursed blade");
-      if (d > 0) { addLog(room, `🩸 CURSED BLADE — ${d} damage!`); narration = `${actor.name} unleashes the Cursed Blade — ${d} devastating damage! But the curse binds them...`; }
-      actor.skipTurns = Math.max(actor.skipTurns, 1);
-      addLog(room, `💀 ${actor.name} is cursed — stunned next turn!`);
+      if (d > 0) {
+        addLog(room, `🩸 CURSED BLADE — ${d} damage!`);
+        narration = `${actor.name} unleashes the Cursed Blade — ${d} devastating damage! Pure corrupted power.`;
+      }
       break;
     }
     case "blood_pact": {
@@ -568,20 +717,18 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       if (d > 0) { addLog(room, `🩸 BLOOD PACT — sacrifice 15, deal ${d}!`); narration = `${actor.name} seals a Blood Pact! Sacrifices 15 HP to unleash ${d} dark damage!`; }
       break;
     }
+
     // ── CORRUPTED ───────────────────────────────────────────────
     case "cursed_heal": {
-      const before = actor.hp;
-      actor.hp = Math.min(actor.maxHp, actor.hp + 35);
-      const oppHeal = 20;
-      target.hp = Math.min(target.maxHp, target.hp + oppHeal);
-      addLog(room, `💜 CURSED HEAL — +${actor.hp - before} HP... but ${target.name} heals ${oppHeal} too!`);
-      narration = `${actor.name} drinks a cursed potion, healing ${actor.hp - before} HP! But the corruption spreads — ${target.name} also heals ${oppHeal} HP!`;
+      const healed = applyHeal(room, actor, 35);
+      const oppHeal = applyHeal(room, target, 20);
+      addLog(room, `💜 CURSED HEAL — +${healed} HP... but ${target.name} heals ${oppHeal} too!`);
+      narration = `${actor.name} drinks a cursed potion, healing ${healed} HP! But the corruption spreads — ${target.name} also heals ${oppHeal} HP!`;
       break;
     }
     case "betrayal": {
       const d = dealDamage(room, actor, target, 25, "betrayal");
       actor.hp = Math.max(0, actor.hp - 10);
-      // Give opponent a random rare card
       const rareCards: CardId[] = ["gamble","divine_shield","double_strike","vampire_bite","reflect"];
       const gift = rareCards[Math.floor(Math.random() * rareCards.length)];
       target.hand.push(gift);
@@ -605,21 +752,67 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       narration = `${actor.name} offers their life force to the cosmos! Loses 30 HP but draws 4 new cards!`;
       break;
     }
-    // ── LEGENDARY ───────────────────────────────────────────────
-    case "freeze": {
-      target.skipTurns = 2;
-      addLog(room, `❄ FREEZE — ${target.name} frozen for 2 turns!`);
-      narration = `${actor.name} encases ${target.name} in cosmic ice — FROZEN for 2 full turns!`;
+    case "hand_swap": {
+      const myHand = [...actor.hand];
+      const theirHand = [...target.hand];
+      actor.hand = theirHand;
+      target.hand = myHand;
+      addLog(room, `🔀 HAND SWAP — ${actor.name} swapped hands with ${target.name}!`);
+      narration = `${actor.name} rips the cards from ${target.name}'s grip and shoves their own deck into their hands! HANDS SWAPPED!`;
       break;
     }
+    case "cursed_mirror": {
+      const effects: string[] = [];
+      if (target.shield)              { actor.shield = true;              effects.push("Shield"); }
+      if (target.reflectActive)       { actor.reflectActive = true;       effects.push("Reflect"); }
+      if (target.counterStanceActive) { actor.counterStanceActive = true; effects.push("Counter Stance"); }
+      if (target.manaSurgeActive)     { actor.manaSurgeActive = true;     effects.push("Mana Surge"); }
+      if (target.regenStacks > 0)     { actor.regenStacks = Math.max(actor.regenStacks, target.regenStacks); effects.push(`Regen×${target.regenStacks}`); }
+      if (target.darkMatterStacks > 0){ actor.darkMatterStacks = Math.max(actor.darkMatterStacks, target.darkMatterStacks); effects.push(`Dark Matter×${target.darkMatterStacks}`); }
+      if (target.poisoned > 0)        { actor.poisoned = Math.max(actor.poisoned, target.poisoned); effects.push(`Poison`); }
+      if (target.plagueStacks > 0)    { actor.plagueStacks = Math.max(actor.plagueStacks, target.plagueStacks); effects.push(`Plague`); }
+      if (effects.length === 0) {
+        addLog(room, `🪟 CURSED MIRROR — ${target.name} has no effects to copy!`);
+        narration = `${actor.name} holds up the Cursed Mirror... but ${target.name} has nothing to copy!`;
+      } else {
+        addLog(room, `🪟 CURSED MIRROR — ${actor.name} copied: ${effects.join(", ")}!`);
+        narration = `${actor.name} gazes into the Cursed Mirror and absorbs ${target.name}'s aura! Copied: ${effects.join(", ")}!`;
+      }
+      break;
+    }
+    // NEW CORRUPTED: replaces debt_collector — strategic, rarity-scaled healing
+    case "curse_tax": {
+      if (target.hand.length === 0) {
+        addLog(room, `💸 CURSE TAX — ${target.name} has no cards to destroy!`);
+        narration = `${actor.name} reaches for the Curse Tax... ${target.name} has nothing to take!`;
+      } else {
+        const ridx = Math.floor(Math.random() * target.hand.length);
+        const destroyed = target.hand.splice(ridx, 1)[0] as CardId;
+        const rarity = CARD_RARITIES[destroyed] ?? "common";
+        const healAmt = RARITY_HEAL[rarity] ?? 5;
+        const healed = applyHeal(room, actor, healAmt);
+        addLog(room, `💸 CURSE TAX — destroyed ${target.name}'s ${CARD_NAMES[destroyed]} (${rarity}), healed ${healed} HP!`);
+        narration = `${actor.name} collects the Curse Tax! Destroys ${target.name}'s ${CARD_NAMES[destroyed]} — a ${rarity} card — and siphons ${healed} HP from it!`;
+      }
+      break;
+    }
+
+    // ── LEGENDARY ───────────────────────────────────────────────
+    // REWORKED: no stun, 25 DMG + blocks healing for 2 turns
+    case "freeze": {
+      const d = dealDamage(room, actor, target, 25, "freeze");
+      target.healBlocked = 2;
+      addLog(room, `❄ FREEZE — ${d > 0 ? d : 0} damage + ${target.name}'s healing BLOCKED for 2 turns!`);
+      narration = `${actor.name} encases ${target.name} in cosmic ice — ${d > 0 ? d : 0} damage and their healing is FROZEN for 2 turns!`;
+      break;
+    }
+    // REWORKED: no stun, pure scaling damage only
     case "divine_retribution": {
-      const bonusDmg = actor.stunsSuffered * 10;
-      const baseDmg = 15;
-      const total = baseDmg + bonusDmg;
-      target.skipTurns = Math.max(target.skipTurns, 2);
+      const bonusDmg = Math.min(actor.stunsSuffered * 10, 50);
+      const total = 15 + bonusDmg;
       const d = dealDamage(room, actor, target, total, "divine retribution");
-      addLog(room, `⚡ DIVINE RETRIBUTION — ${d > 0 ? d : 0} damage + 2-turn stun! (${actor.stunsSuffered} stuns suffered × 10)`);
-      narration = `${actor.name} calls down DIVINE RETRIBUTION! ${d > 0 ? d : 0} damage (boosted by ${actor.stunsSuffered} stuns suffered) + stuns ${target.name} for 2 turns!`;
+      addLog(room, `⚖ DIVINE RETRIBUTION — ${d > 0 ? d : 0} damage! (${actor.stunsSuffered} stuns × 10, base 15, max 65)`);
+      narration = `${actor.name} calls down DIVINE RETRIBUTION! Every stun suffered made this hit harder — ${d > 0 ? d : 0} total damage!`;
       break;
     }
     case "titans_wrath": {
@@ -633,7 +826,7 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     case "last_stand": {
       if (actor.hp <= 30) {
         const d = dealDamage(room, actor, target, 60, "last stand");
-        addLog(room, `🔱 LAST STAND — ${d > 0 ? d : 0} MASSIVE damage! (low HP triggered)`);
+        addLog(room, `🔱 LAST STAND — ${d > 0 ? d : 0} MASSIVE damage!`);
         narration = `${actor.name} is on the brink! LAST STAND triggers — dealing ${d > 0 ? d : 0} MASSIVE damage!`;
       } else {
         const d = dealDamage(room, actor, target, 5, "last stand");
@@ -653,19 +846,31 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
           hits.push(`5 backfire!`);
         }
       }
-      addLog(room, `⚡ LIGHTNING STORM: ${hits.join(", ")}`);
+      addLog(room, `⛈ LIGHTNING STORM: ${hits.join(", ")}`);
       narration = `${actor.name} summons a LIGHTNING STORM! Three chaotic bolts — ${hits.join(", ")}!`;
       break;
     }
+    // REWORKED: heavier recoil — 50 DMG but 30 to self
     case "meteor": {
       const d = dealDamage(room, actor, target, 50, "meteor");
+      actor.hp = Math.max(0, actor.hp - 30);
       if (d > 0) {
-        actor.skipTurns = Math.max(actor.skipTurns, 1);
-        addLog(room, `☄ METEOR — ${d} damage! Stunned after.`);
-        narration = `${actor.name} calls down a METEOR! ${target.name} takes ${d} catastrophic damage! The effort stuns ${actor.name}...`;
+        addLog(room, `☄ METEOR — ${d} damage! (30 recoil to self)`);
+        narration = `${actor.name} calls down a METEOR! ${target.name} takes ${d} catastrophic damage! But the shockwave SHATTERS ${actor.name} for 30 recoil!`;
       }
       break;
     }
+    case "overflow": {
+      const drawn: CardId[] = [];
+      for (let i = 0; i < 5; i++) drawn.push(drawOne([...actor.hand as CardId[], ...drawn]));
+      actor.hand.push(...drawn);
+      actor.overflowDiscard = 1;
+      actor.overflowCount = 5;
+      addLog(room, `🃏 OVERFLOW — drew 5 cards! Will discard 5 at start of next turn.`);
+      narration = `${actor.name} channels cosmic overflow — draws 5 cards instantly! But the universe balances itself — 5 will be discarded next turn!`;
+      break;
+    }
+
     // ── MYTHIC ──────────────────────────────────────────────────
     case "soul_swap": {
       const myHp = actor.hp;
@@ -677,16 +882,13 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       break;
     }
     case "armageddon": {
-      // Bypasses shields
       actor.hp = Math.max(0, actor.hp - 40);
       target.hp = Math.max(0, target.hp - 40);
-      addLog(room, `☠ ARMAGEDDON — both players take 40 damage! No shields block this!`);
+      addLog(room, `💥 ARMAGEDDON — both players take 40 damage! No shields block this!`);
       narration = `${actor.name} triggers ARMAGEDDON! The cosmos trembles — BOTH players take 40 damage! Shields are useless!`;
       break;
     }
     case "void_rift": {
-      const myHandSize = actor.hand.length;
-      const theirHandSize = target.hand.length;
       actor.hand = drawHand(3);
       target.hand = drawHand(3);
       addLog(room, `🌀 VOID RIFT — all hands destroyed! Both redraw 3 cards!`);
@@ -707,15 +909,86 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       }
       break;
     }
+    case "time_warp": {
+      actor.extraTurn = true;
+      actor.extraTurnDebt = 2;
+      addLog(room, `⏳ TIME WARP — ${actor.name} gets 2 extra turns! Debt: skip 2 turns later.`);
+      narration = `${actor.name} warps time itself! Taking 2 extra turns NOW... but will owe 2 skipped turns afterward!`;
+      break;
+    }
+
+    // ── VOID ────────────────────────────────────────────────────
+    case "singularity": {
+      const avg = Math.floor((actor.hp + target.hp) / 2);
+      const actorOld = actor.hp;
+      const targetOld = target.hp;
+      actor.hp = Math.min(actor.maxHp, avg);
+      target.hp = Math.min(target.maxHp, avg);
+      addLog(room, `🕳 SINGULARITY — HP equalized to ${avg}! ${actor.name}: ${actorOld}→${avg}, ${target.name}: ${targetOld}→${avg}`);
+      narration = actorOld > targetOld
+        ? `${actor.name} collapses space-time into a SINGULARITY! HP equalized at ${avg} — brutal!`
+        : `${actor.name} collapses the singularity... both equalized at ${avg} HP. Bold move when you were losing!`;
+      break;
+    }
+    case "dark_matter": {
+      target.darkMatterStacks = 2;
+      addLog(room, `🫧 DARK MATTER — ${target.name}'s next 2 damaging cards deal 0 damage!`);
+      narration = `${actor.name} surrounds ${target.name} in DARK MATTER! Their next 2 attacks will be completely absorbed!`;
+      break;
+    }
+    case "event_horizon": {
+      target.eventHorizonActive = true;
+      addLog(room, `🌑 EVENT HORIZON — ${target.name}'s next attack collapses back on themselves!`);
+      narration = `${actor.name} creates an EVENT HORIZON! The next time ${target.name} attacks, the damage will fold back on themselves!`;
+      break;
+    }
+    case "neutron_star": {
+      const d = dealDamage(room, actor, target, 20, "neutron star");
+      target.neutronStarTicks = 3;
+      addLog(room, `⭐ NEUTRON STAR — ${d > 0 ? d : 0} now + 10/turn for 3 turns!`);
+      narration = `${actor.name} launches a NEUTRON STAR! ${d > 0 ? d : 0} immediate damage + 10 radiation damage each of ${target.name}'s next 3 turns!`;
+      break;
+    }
+    case "void_pulse": {
+      let effectCount = 0;
+      if (target.poisoned > 0)         effectCount++;
+      if (target.plagueStacks > 0)     effectCount++;
+      if (target.skipTurns > 0)        effectCount++;
+      if (target.neutronStarTicks > 0) effectCount++;
+      if (target.eventHorizonActive)   effectCount++;
+      if (target.darkMatterStacks > 0) effectCount++;
+      if (target.taunted)              effectCount++;
+      if (target.healBlocked > 0)      effectCount++;  // freeze debuff counts too
+      const vpDmg = Math.max(5, effectCount * 5);
+      const d = dealDamage(room, actor, target, vpDmg, "void pulse");
+      addLog(room, `🔵 VOID PULSE — ${effectCount} effects × 5 = ${d > 0 ? d : 0} damage!`);
+      narration = effectCount >= 3
+        ? `${actor.name} fires a VOID PULSE! ${target.name} had ${effectCount} effects — ${d > 0 ? d : 0} CRUSHING damage from accumulated chaos!`
+        : `${actor.name} fires a Void Pulse for ${d > 0 ? d : 0} damage. More effects = more pain!`;
+      break;
+    }
   }
 
   room.lastNarration = narration;
   if (checkDeath(room, actorToken, targetToken)) { broadcast(room); return; }
   replenishCard(actor);
+
+  // Time warp extra turn logic
   if (actor.extraTurn) {
     actor.extraTurn = false;
-    addLog(room, `⏳ ${actor.name} takes an EXTRA TURN!`);
-    startTurn(room, actorToken);
+    if ((actor as any)._warpTurnsLeft === undefined) (actor as any)._warpTurnsLeft = 0;
+    if (cardId === "time_warp") {
+      (actor as any)._warpTurnsLeft = 2;
+    }
+    if ((actor as any)._warpTurnsLeft > 0) {
+      (actor as any)._warpTurnsLeft--;
+      if ((actor as any)._warpTurnsLeft > 0) actor.extraTurn = true;
+      addLog(room, `⏳ ${actor.name} takes an extra TIME WARP turn!`);
+      startTurn(room, actorToken);
+    } else {
+      addLog(room, `⏳ ${actor.name} takes an EXTRA TURN!`);
+      startTurn(room, actorToken);
+    }
   } else {
     startTurn(room, targetToken);
   }
@@ -746,7 +1019,14 @@ io.on("connection", socket => {
       hp: 100, maxHp: 100,
       shield: false, reflectActive: false, counterStanceActive: false, manaSurgeActive: false,
       poisoned: 0, regenStacks: 0, plagueStacks: 0,
-      skipTurns: 0, taunted: false, extraTurn: false, stunsSuffered: 0,
+      skipTurns: 0, taunted: false, extraTurn: false, extraTurnDebt: 0, stunsSuffered: 0,
+      stunCooldown: 0,
+      darkMatterStacks: 0,
+      eventHorizonActive: false,
+      neutronStarTicks: 0,
+      healBlocked: 0,
+      overflowDiscard: 0,
+      overflowCount: 0,
       lastCard: null, hand: drawHand(5),
       rematchReady: false, connected: true,
     };
@@ -800,7 +1080,14 @@ io.on("connection", socket => {
           p.hp = 100; p.maxHp = 100;
           p.shield = false; p.reflectActive = false; p.counterStanceActive = false; p.manaSurgeActive = false;
           p.poisoned = 0; p.regenStacks = 0; p.plagueStacks = 0;
-          p.skipTurns = 0; p.taunted = false; p.extraTurn = false; p.stunsSuffered = 0;
+          p.skipTurns = 0; p.taunted = false; p.extraTurn = false; p.extraTurnDebt = 0; p.stunsSuffered = 0;
+          p.stunCooldown = 0;
+          p.darkMatterStacks = 0;
+          p.eventHorizonActive = false;
+          p.neutronStarTicks = 0;
+          p.healBlocked = 0;
+          p.overflowDiscard = 0;
+          p.overflowCount = 0;
           p.lastCard = null; p.hand = drawHand(5); p.rematchReady = false;
         });
         room.gameOver = false; room.winnerId = null;
