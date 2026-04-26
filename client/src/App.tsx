@@ -132,6 +132,7 @@ function Lobby({ onEnter }: { onEnter: (code: string) => void }) {
   const [joinCode, setJoinCode] = useState("");
   const [mode, setMode] = useState<"main" | "join">("main");
   const [error, setError] = useState("");
+  const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
 
   function handleCreate() {
     const code = createRoomCode();
@@ -140,136 +141,234 @@ function Lobby({ onEnter }: { onEnter: (code: string) => void }) {
 
   function handleJoin() {
     const code = joinCode.trim().toUpperCase();
-    if (code.length < 4) { setError("Enter a valid room code."); return; }
+    if (code.length < 4) { setError("INVALID CODE"); return; }
     onEnter(joinRoomCode(code));
   }
+
+  const cornerStyle = (v: string, h: string): React.CSSProperties => ({
+    position: "absolute", [v]: -3, [h]: -3,
+    width: 10, height: 10,
+    background: "#f9ca24",
+    boxShadow: "0 0 8px #f9ca24, 0 0 16px #f9ca2466",
+  });
 
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 50,
-      display: "flex", alignItems: "center", justifyContent: "center",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
       fontFamily: "'Press Start 2P', monospace",
+      padding: 20,
     }}>
+      {/* Scan-line overlay */}
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 1,
+        background: "repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,0.07) 2px,rgba(0,0,0,0.07) 4px)" }} />
+
+      {/* Main panel */}
       <div style={{
-        background: "#080810",
+        position: "relative", zIndex: 2,
+        background: "linear-gradient(160deg, #07070f 0%, #0b0b18 60%, #080812 100%)",
         border: "2px solid #f9ca24",
-        padding: "36px 40px",
-        textAlign: "center",
-        minWidth: 320,
-        position: "relative",
+        width: "100%", maxWidth: 420,
+        boxShadow: "0 0 0 1px #f9ca2422, 0 0 40px #f9ca2418, inset 0 0 60px #00000066",
+        overflow: "hidden",
       }}>
-        {/* Corner decorations */}
-        {(["top","bottom"] as const).flatMap(v => (["left","right"] as const).map(h => (
-          <div key={`${v}${h}`} style={{ position: "absolute", [v]: -2, [h]: -2, width: 6, height: 6, background: "#f9ca24", boxShadow: "0 0 5px #f9ca24" }} />
-        )))}
+        {/* Corner dots */}
+        <div style={cornerStyle("top","left")} />
+        <div style={cornerStyle("top","right")} />
+        <div style={cornerStyle("bottom","left")} />
+        <div style={cornerStyle("bottom","right")} />
 
-        <div style={{ fontSize: 6, color: "#a55eea", letterSpacing: 4, marginBottom: 8, animation: "blink 2s step-end infinite" }}>★ COSMIC ARENA ★</div>
-        <div style={{ fontSize: 18, color: "#f9ca24", marginBottom: 4, letterSpacing: 3, textShadow: "0 0 8px #f9ca24aa" }}>KRAM KARD</div>
-        <div style={{ fontSize: 5, color: "#333", letterSpacing: 2, marginBottom: 32 }}>▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</div>
+        {/* Top accent bar */}
+        <div style={{ height: 3, background: "linear-gradient(90deg, transparent, #f9ca24, #a55eea, #45aaf2, transparent)" }} />
 
-        {mode === "main" ? (
-          <>
-            <div style={{ fontSize: 7, color: "#aaa", marginBottom: 24, letterSpacing: 1 }}>CHOOSE YOUR FATE</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* Header section */}
+        <div style={{ textAlign: "center", padding: "32px 40px 24px" }}>
+          <div style={{ fontSize: 6, color: "#a55eea", letterSpacing: 5, marginBottom: 10, animation: "blink 2s step-end infinite" }}>
+            ★ COSMIC ARENA ★
+          </div>
+          <div style={{ fontSize: 28, color: "#f9ca24", letterSpacing: 6, textShadow: "0 0 12px #f9ca24aa, 0 0 30px #f9ca2444", marginBottom: 6 }}>
+            KRAM KARD
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 3, marginBottom: 4 }}>
+            {["#f9ca24","#fc5c65","#26de81","#45aaf2","#a55eea","#45aaf2","#26de81","#fc5c65","#f9ca24"].map((c,i) => (
+              <div key={i} style={{ width: 4, height: 4, background: c, opacity: 0.6 }} />
+            ))}
+          </div>
+          <div style={{ fontSize: 5, color: "#2a2a3a", letterSpacing: 3, marginTop: 2 }}>
+            ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: "linear-gradient(90deg, transparent, #1e1e3a, #f9ca2433, #1e1e3a, transparent)", margin: "0 24px" }} />
+
+        {/* Content section */}
+        <div style={{ padding: "28px 40px 36px", display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
+
+          {mode === "main" ? (
+            <>
+              <div style={{ fontSize: 6, color: "#444", letterSpacing: 3, marginBottom: 24, textAlign: "center" }}>
+                — SELECT MODE —
+              </div>
+
+              {/* CREATE ROOM button */}
               <button
                 onClick={handleCreate}
+                onMouseEnter={() => setHoveredBtn("create")}
+                onMouseLeave={() => setHoveredBtn(null)}
                 style={{
-                  background: "transparent",
-                  border: "2px solid #f9ca24",
+                  width: "100%",
+                  background: hoveredBtn === "create" ? "linear-gradient(135deg, #f9ca2418, #f9ca2408)" : "transparent",
+                  border: `2px solid ${hoveredBtn === "create" ? "#f9ca24" : "#f9ca2477"}`,
                   color: "#f9ca24",
-                  padding: "12px 24px",
-                  fontSize: 7,
+                  padding: "16px 0",
+                  fontSize: 8,
                   fontFamily: "'Press Start 2P', monospace",
                   cursor: "pointer",
-                  letterSpacing: 1,
-                  transition: "all 0.15s",
+                  letterSpacing: 2,
+                  marginBottom: 14,
+                  transition: "all 0.12s",
+                  boxShadow: hoveredBtn === "create" ? "0 0 16px #f9ca2433, inset 0 0 20px #f9ca2408" : "none",
+                  position: "relative",
                 }}
-                onMouseEnter={e => { (e.target as HTMLButtonElement).style.background = "#f9ca2422"; }}
-                onMouseLeave={e => { (e.target as HTMLButtonElement).style.background = "transparent"; }}
               >
-                ✦ CREATE ROOM
+                <span style={{ marginRight: 8, fontSize: 10 }}>✦</span>
+                CREATE ROOM
+                {hoveredBtn === "create" && (
+                  <div style={{ position: "absolute", bottom: -1, left: "10%", right: "10%", height: 1, background: "#f9ca24", boxShadow: "0 0 6px #f9ca24" }} />
+                )}
               </button>
+
+              {/* JOIN ROOM button */}
               <button
                 onClick={() => { setMode("join"); setError(""); }}
+                onMouseEnter={() => setHoveredBtn("join")}
+                onMouseLeave={() => setHoveredBtn(null)}
                 style={{
-                  background: "transparent",
-                  border: "2px solid #45aaf2",
+                  width: "100%",
+                  background: hoveredBtn === "join" ? "linear-gradient(135deg, #45aaf218, #45aaf208)" : "transparent",
+                  border: `2px solid ${hoveredBtn === "join" ? "#45aaf2" : "#45aaf277"}`,
                   color: "#45aaf2",
-                  padding: "12px 24px",
-                  fontSize: 7,
+                  padding: "16px 0",
+                  fontSize: 8,
                   fontFamily: "'Press Start 2P', monospace",
                   cursor: "pointer",
-                  letterSpacing: 1,
-                  transition: "all 0.15s",
-                }}
-                onMouseEnter={e => { (e.target as HTMLButtonElement).style.background = "#45aaf222"; }}
-                onMouseLeave={e => { (e.target as HTMLButtonElement).style.background = "transparent"; }}
-              >
-                ▶ JOIN ROOM
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize: 7, color: "#45aaf2", marginBottom: 20, letterSpacing: 1 }}>ENTER ROOM CODE</div>
-            <input
-              value={joinCode}
-              onChange={e => { setJoinCode(e.target.value.slice(0, 8)); setError(""); }}
-              onKeyDown={e => e.key === "Enter" && handleJoin()}
-              autoFocus
-              maxLength={8}
-              placeholder="X7K2PQ"
-              style={{
-                background: "#0d0d1a",
-                border: `1px solid ${error ? "#fc5c65" : "#45aaf2"}`,
-                color: "#fff",
-                padding: "10px 14px",
-                fontSize: 12,
-                fontFamily: "'Press Start 2P', monospace",
-                width: 200,
-                outline: "none",
-                marginBottom: 8,
-                display: "block",
-                textTransform: "uppercase",
-                letterSpacing: 3,
-                textAlign: "center",
-              }}
-            />
-            {error && <div style={{ fontSize: 6, color: "#fc5c65", marginBottom: 8 }}>{error}</div>}
-            <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 12 }}>
-              <button
-                onClick={() => { setMode("main"); setJoinCode(""); setError(""); }}
-                style={{
-                  background: "transparent",
-                  border: "1px solid #555",
-                  color: "#555",
-                  padding: "8px 14px",
-                  fontSize: 6,
-                  fontFamily: "'Press Start 2P', monospace",
-                  cursor: "pointer",
-                  letterSpacing: 1,
+                  letterSpacing: 2,
+                  transition: "all 0.12s",
+                  boxShadow: hoveredBtn === "join" ? "0 0 16px #45aaf233, inset 0 0 20px #45aaf208" : "none",
+                  position: "relative",
                 }}
               >
-                ◀ BACK
+                <span style={{ marginRight: 8 }}>▶</span>
+                JOIN ROOM
+                {hoveredBtn === "join" && (
+                  <div style={{ position: "absolute", bottom: -1, left: "10%", right: "10%", height: 1, background: "#45aaf2", boxShadow: "0 0 6px #45aaf2" }} />
+                )}
               </button>
-              <button
-                onClick={handleJoin}
-                style={{
-                  background: "transparent",
-                  border: "1px solid #45aaf2",
-                  color: "#45aaf2",
-                  padding: "8px 14px",
-                  fontSize: 6,
-                  fontFamily: "'Press Start 2P', monospace",
-                  cursor: "pointer",
-                  letterSpacing: 1,
-                }}
-              >
-                ENTER ▶
-              </button>
-            </div>
-          </>
-        )}
+
+              {/* Decorative footer */}
+              <div style={{ marginTop: 28, display: "flex", gap: 8, alignItems: "center" }}>
+                <div style={{ width: 30, height: 1, background: "#1e1e3a" }} />
+                <span style={{ fontSize: 5, color: "#2a2a3a", letterSpacing: 2 }}>PVP CARD BATTLE</span>
+                <div style={{ width: 30, height: 1, background: "#1e1e3a" }} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 6, color: "#45aaf2", letterSpacing: 3, marginBottom: 20, textAlign: "center" }}>
+                — ENTER ROOM CODE —
+              </div>
+
+              {/* Code input */}
+              <div style={{ position: "relative", width: "100%", marginBottom: 8 }}>
+                <input
+                  value={joinCode}
+                  onChange={e => { setJoinCode(e.target.value.slice(0, 6)); setError(""); }}
+                  onKeyDown={e => e.key === "Enter" && handleJoin()}
+                  autoFocus
+                  maxLength={6}
+                  placeholder="X7K2PQ"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    boxSizing: "border-box",
+                    background: "#050510",
+                    border: `2px solid ${error ? "#fc5c65" : "#45aaf255"}`,
+                    color: "#fff",
+                    padding: "14px 16px",
+                    fontSize: 18,
+                    fontFamily: "'Press Start 2P', monospace",
+                    outline: "none",
+                    textTransform: "uppercase",
+                    letterSpacing: 8,
+                    textAlign: "center",
+                    boxShadow: error ? "0 0 12px #fc5c6533" : "inset 0 0 20px #00000044",
+                    caretColor: "#45aaf2",
+                  }}
+                />
+                {/* Blinking cursor line at bottom of input */}
+                <div style={{ position: "absolute", bottom: 0, left: "5%", right: "5%", height: 2, background: error ? "#fc5c65" : "#45aaf244" }} />
+              </div>
+
+              {error
+                ? <div style={{ fontSize: 6, color: "#fc5c65", marginBottom: 16, letterSpacing: 1, animation: "blink 0.5s step-end 3" }}>{error}</div>
+                : <div style={{ height: 22, marginBottom: 16 }} />
+              }
+
+              {/* Action buttons — full width, side by side */}
+              <div style={{ display: "flex", gap: 12, width: "100%" }}>
+                <button
+                  onClick={() => { setMode("main"); setJoinCode(""); setError(""); }}
+                  onMouseEnter={() => setHoveredBtn("back")}
+                  onMouseLeave={() => setHoveredBtn(null)}
+                  style={{
+                    flex: 1,
+                    background: hoveredBtn === "back" ? "#ffffff08" : "transparent",
+                    border: "1px solid #333",
+                    color: "#555",
+                    padding: "12px 0",
+                    fontSize: 6,
+                    fontFamily: "'Press Start 2P', monospace",
+                    cursor: "pointer",
+                    letterSpacing: 1,
+                    transition: "all 0.12s",
+                  }}
+                >
+                  ◀ BACK
+                </button>
+                <button
+                  onClick={handleJoin}
+                  onMouseEnter={() => setHoveredBtn("enter")}
+                  onMouseLeave={() => setHoveredBtn(null)}
+                  style={{
+                    flex: 2,
+                    background: hoveredBtn === "enter" ? "#45aaf218" : "transparent",
+                    border: `2px solid ${hoveredBtn === "enter" ? "#45aaf2" : "#45aaf277"}`,
+                    color: "#45aaf2",
+                    padding: "12px 0",
+                    fontSize: 7,
+                    fontFamily: "'Press Start 2P', monospace",
+                    cursor: "pointer",
+                    letterSpacing: 2,
+                    transition: "all 0.12s",
+                    boxShadow: hoveredBtn === "enter" ? "0 0 12px #45aaf233" : "none",
+                  }}
+                >
+                  ENTER ▶
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Bottom accent bar */}
+        <div style={{ height: 2, background: "linear-gradient(90deg, transparent, #45aaf233, #a55eea33, #f9ca2433, transparent)" }} />
+      </div>
+
+      {/* Version tag */}
+      <div style={{ marginTop: 16, fontSize: 5, color: "#1e1e2e", letterSpacing: 2, zIndex: 2 }}>
+        ★ KRAM KARD v1.0 ★
       </div>
     </div>
   );
@@ -702,13 +801,14 @@ export default function App() {
   // ── LOBBY: show before anything else if no room selected ─────────────────
   if (!roomId) {
     return (
-      <>
-        <style>{`@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>
-        <div style={{ background: "#05050f", minHeight: "100vh" }}>
-          <Starfield />
-          <Lobby onEnter={(code) => setRoomId(code)} />
-        </div>
-      </>
+      <div style={{ background: "#05050f", minHeight: "100vh", position: "fixed", inset: 0, overflow: "hidden" }}>
+        <style>{`
+          @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+          * { box-sizing: border-box; }
+        `}</style>
+        <Starfield />
+        <Lobby onEnter={(code) => setRoomId(code)} />
+      </div>
     );
   }
 
