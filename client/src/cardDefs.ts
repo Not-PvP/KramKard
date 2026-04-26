@@ -18,8 +18,10 @@ export type CardId =
   | "hand_swap" | "overflow" | "time_warp"
   | "shockwave" | "curse_tax"
   | "cursed_mirror" | "void_pulse"
-  // ✦ NEW CARDS
-  | "war_cry" | "chain_stun" | "soul_drain" | "echo_strike";
+  // Previous new cards
+  | "war_cry" | "chain_stun" | "soul_drain" | "echo_strike"
+  // ✦ NEW HEALING CARDS
+  | "sacred_spring" | "blood_transfusion" | "celestial_mend" | "phoenix_ember";
 
 export type Rarity = "common" | "uncommon" | "rare" | "cursed" | "corrupted" | "legendary" | "mythic" | "void";
 
@@ -118,6 +120,8 @@ export const CARD_DEFS: Record<CardId, CardDef> = {
                         description: "20 DMG. Deals +25 bonus if foe is currently stunned." },
   chain_stun:         { id: "chain_stun",         name: "CHAIN STUN",         icon: "⛓", rarity: "rare",      color: "#45aaf2", bgColor: "#000d18", glowColor: "#45aaf2",
                         description: "10 DMG. If foe is stunned, deal 25 DMG instead + extend stun 1 turn." },
+  sacred_spring:      { id: "sacred_spring",      name: "SACRED SPRING",      icon: "🌿", rarity: "rare",      color: "#26de81", bgColor: "#001a0a", glowColor: "#26de81",
+                        description: "Heal 30 HP + gain 2 regen stacks (20 HP/turn for 2 turns)." },
 
   // ── CURSED ──────────────────────────────────────────────────────
   cursed_blade:       { id: "cursed_blade",       name: "CURSED BLADE",       icon: "🩸", rarity: "cursed",    color: "#fc5c65", bgColor: "#1a0008", glowColor: "#fc5c65",
@@ -142,6 +146,8 @@ export const CARD_DEFS: Record<CardId, CardDef> = {
                         description: "Copy all foe buffs AND debuffs onto yourself." },
   curse_tax:          { id: "curse_tax",          name: "CURSE TAX",          icon: "💸", rarity: "corrupted", color: "#c44dff", bgColor: "#120018", glowColor: "#c44dff",
                         description: "Destroy foe's random card. Heal HP based on its rarity (5–35 HP)." },
+  blood_transfusion:  { id: "blood_transfusion",  name: "BLOOD TRANSFUSION",  icon: "🩺", rarity: "corrupted", color: "#c44dff", bgColor: "#150010", glowColor: "#c44dff",
+                        description: "Steal 35 HP directly from foe (they lose 35, you gain 35). Can't exceed max HP." },
 
   // ── LEGENDARY ───────────────────────────────────────────────────
   freeze:             { id: "freeze",             name: "FREEZE",             icon: "❄",  rarity: "legendary", color: "#f9ca24", bgColor: "#001520", glowColor: "#74b9ff",
@@ -160,6 +166,8 @@ export const CARD_DEFS: Record<CardId, CardDef> = {
                         description: "Draw 5 cards now, discard 5 random cards next turn." },
   echo_strike:        { id: "echo_strike",        name: "ECHO STRIKE",        icon: "🔁", rarity: "legendary", color: "#f9ca24", bgColor: "#1a1200", glowColor: "#f9ca24",
                         description: "Repeat the raw damage of your last played card (no side effects)." },
+  celestial_mend:     { id: "celestial_mend",     name: "CELESTIAL MEND",     icon: "✨", rarity: "legendary", color: "#f9ca24", bgColor: "#001a0f", glowColor: "#26de81",
+                        description: "Heal 60 HP + cleanse ALL debuffs (poison, plague, stun, heal block)." },
 
   // ── MYTHIC ──────────────────────────────────────────────────────
   soul_swap:          { id: "soul_swap",          name: "SOUL SWAP",          icon: "👁", rarity: "mythic",    color: "#ff6fd8", bgColor: "#1a0015", glowColor: "#ff6fd8",
@@ -172,6 +180,8 @@ export const CARD_DEFS: Record<CardId, CardDef> = {
                         description: "Instant win if foe ≤25 HP. Otherwise deals 5 DMG." },
   time_warp:          { id: "time_warp",          name: "TIME WARP",          icon: "⏳", rarity: "mythic",    color: "#ff6fd8", bgColor: "#1a0015", glowColor: "#ff6fd8",
                         description: "Take 2 extra turns now, then skip 2 turns later." },
+  phoenix_ember:      { id: "phoenix_ember",      name: "PHOENIX EMBER",      icon: "🔥", rarity: "mythic",    color: "#ff6fd8", bgColor: "#1a0500", glowColor: "#ff6fd8",
+                        description: "If HP ≤ 20: rise from the ashes — restore to 60 HP + raise a shield. Otherwise heal 20 HP." },
 
   // ── VOID ────────────────────────────────────────────────────────
   singularity:        { id: "singularity",        name: "SINGULARITY",        icon: "🕳", rarity: "void",      color: "#00ffcc", bgColor: "#001a15", glowColor: "#00ffcc",
