@@ -63,9 +63,7 @@ export type CardId =
   | "hand_swap" | "overflow" | "time_warp"
   | "shockwave" | "curse_tax"
   | "cursed_mirror" | "void_pulse"
-  // Previous new cards
   | "war_cry" | "chain_stun" | "soul_drain" | "echo_strike"
-  // ✦ NEW HEALING CARDS
   | "sacred_spring" | "blood_transfusion" | "celestial_mend" | "phoenix_ember";
 
 export type Rarity = "common" | "uncommon" | "rare" | "cursed" | "corrupted" | "legendary" | "mythic" | "void";
@@ -95,10 +93,10 @@ export const CARD_NAMES: Record<CardId, string> = {
   celestial_mend: "Celestial Mend", phoenix_ember: "Phoenix Ember",
 };
 
-// Rarity ordering for curse_tax heal scaling
 const RARITY_HEAL: Record<string, number> = {
   common: 5, uncommon: 10, rare: 15, cursed: 20, corrupted: 22, legendary: 28, mythic: 32, void: 35,
 };
+
 const CARD_RARITIES: Record<CardId, string> = {
   slash: "common", weak_jab: "common", fumble: "common",
   heavy_blow: "uncommon", heal: "uncommon", shield: "uncommon", poison_dart: "uncommon",
@@ -118,81 +116,41 @@ const CARD_RARITIES: Record<CardId, string> = {
   singularity: "void", dark_matter: "void", event_horizon: "void", neutron_star: "void", void_pulse: "void",
 };
 
-// ── Draw pool (weighted) ──────────────────────────────────────────
-const DRAW_POOL: CardId[] = [
-  // Common
-  "slash","slash","slash","slash","slash",
-  "weak_jab","weak_jab","weak_jab",
-  "fumble","fumble",
-  // Uncommon
-  "heavy_blow","heavy_blow","heavy_blow",
-  "heal","heal","heal",
-  "shield","shield","shield",
-  "poison_dart","poison_dart",
-  "taunt","taunt",
-  "mana_burn","mana_burn",
-  "ice_spike","ice_spike",
-  "regen","regen",
-  "war_cry","war_cry",
-  // Rare
-  "gamble","gamble",
-  "double_strike","double_strike",
-  "steal",
-  "divine_shield",
-  "vampire_bite","vampire_bite",
-  "earthquake",
-  "berserker",
-  "ghost_step",
-  "reflect",
-  "lucky_shot","lucky_shot",
-  "counter_stance",
-  "mana_surge",
-  "pickpocket",
-  "explosion",
-  "shockwave",
-  "chain_stun",
-  "sacred_spring",
-  // Cursed
-  "cursed_blade",
-  "blood_pact",
-  "soul_drain",
-  // Corrupted
-  "cursed_heal",
-  "betrayal",
-  "plague",
-  "sacrifice",
-  "hand_swap",
-  "cursed_mirror",
-  "curse_tax",
-  "blood_transfusion",
-  // Legendary
-  "freeze",
-  "divine_retribution",
-  "titans_wrath",
-  "last_stand",
-  "lightning_storm",
-  "meteor",
-  "overflow",
-  "echo_strike",
-  "celestial_mend",
-  // Mythic
-  "soul_swap",
-  "armageddon",
-  "void_rift",
-  "judgement",
-  "time_warp",
-  "phoenix_ember",
-  // Void
-  "singularity",
-  "dark_matter",
-  "event_horizon",
-  "neutron_star",
-  "void_pulse",
-];
+// ── Rarity-tiered draw pools ──────────────────────────────────────
+const POOLS: Record<string, CardId[]> = {
+  common:    ["slash", "slash", "slash", "weak_jab", "weak_jab", "fumble"],
+  uncommon:  ["heavy_blow", "heal", "shield", "poison_dart", "taunt", "mana_burn", "ice_spike", "regen", "war_cry"],
+  rare:      ["gamble", "steal", "divine_shield", "double_strike", "vampire_bite", "earthquake", "berserker",
+              "ghost_step", "reflect", "lucky_shot", "counter_stance", "mana_surge", "pickpocket", "explosion",
+              "shockwave", "chain_stun", "sacred_spring"],
+  cursed:    ["cursed_blade", "blood_pact", "soul_drain"],
+  corrupted: ["cursed_heal", "betrayal", "plague", "sacrifice", "hand_swap", "cursed_mirror", "curse_tax", "blood_transfusion"],
+  legendary: ["freeze", "divine_retribution", "titans_wrath", "last_stand", "lightning_storm", "meteor", "overflow", "echo_strike", "celestial_mend"],
+  mythic:    ["soul_swap", "armageddon", "void_rift", "judgement", "time_warp", "phoenix_ember"],
+  void:      ["singularity", "dark_matter", "event_horizon", "neutron_star", "void_pulse"],
+};
 
+// ── Rarity draw chances ───────────────────────────────────────────
+// void: 0.3%, mythic: 1.2%, legendary: 3%, corrupted: 6%, cursed: 6%, rare: 20%, uncommon: 30%, common: 33.5%
 function drawOne(exclude: CardId[] = []): CardId {
-  const pool = DRAW_POOL.filter(c => !exclude.includes(c));
-  return pool[Math.floor(Math.random() * pool.length)];
+  const roll = Math.random() * 100;
+  let tier: string;
+  if      (roll < 0.3)  tier = "void";
+  else if (roll < 1.5)  tier = "mythic";
+  else if (roll < 4.5)  tier = "legendary";
+  else if (roll < 10.5) tier = "corrupted";
+  else if (roll < 16.5) tier = "cursed";
+  else if (roll < 36.5) tier = "rare";
+  else if (roll < 66.5) tier = "uncommon";
+  else                  tier = "common";
+
+  const pool = POOLS[tier].filter(c => !exclude.includes(c));
+  const finalPool = pool.length > 0 ? pool : POOLS["common"].filter(c => !exclude.includes(c));
+  if (finalPool.length === 0) {
+    const all = Object.values(POOLS).flat().filter(c => !exclude.includes(c));
+    return all[Math.floor(Math.random() * all.length)] as CardId;
+  }
+  return finalPool[Math.floor(Math.random() * finalPool.length)] as CardId;
 }
 
 function drawHand(count = 5): CardId[] {
@@ -220,6 +178,7 @@ interface Player {
   taunted: boolean;
   extraTurn: boolean;
   extraTurnDebt: number;
+  warpTurnsLeft: number;
   stunsSuffered: number;
   stunCooldown: number;
   darkMatterStacks: number;
@@ -302,6 +261,9 @@ function replenishCard(player: Player) {
   player.hand.push(drawOne(player.hand as CardId[]));
 }
 
+// ── dealDamage ────────────────────────────────────────────────────
+// Redirect/absorb checks happen FIRST, before any boost is consumed.
+// Mana Surge and War Cry are only spent when damage actually lands on the target.
 function dealDamage(
   room: Room,
   actor: Player,
@@ -310,7 +272,8 @@ function dealDamage(
   source: string,
   bypassShield = false
 ): number {
-  if (target.eventHorizonActive) {
+  // ── 1. Redirect / absorb checks (boosts NOT consumed here) ──────
+  if (target.eventHorizonActive && !bypassShield) {
     target.eventHorizonActive = false;
     actor.hp = Math.max(0, actor.hp - dmg);
     addLog(room, `🌑 EVENT HORIZON! ${source} collapses inward — ${dmg} damage hits ${actor.name} instead!`);
@@ -344,13 +307,13 @@ function dealDamage(
     return -1;
   }
 
+  // ── 2. Damage lands — NOW apply and consume boosts ──────────────
   let finalDmg = dmg;
   if (actor.manaSurgeActive) {
     actor.manaSurgeActive = false;
     finalDmg = dmg * 2 + 10;
     addLog(room, `✨ MANA SURGE: ${dmg} → ${finalDmg} damage!`);
   }
-
   if (actor.warCryBonus > 0) {
     finalDmg += actor.warCryBonus;
     addLog(room, `📯 WAR CRY adds ${actor.warCryBonus} bonus damage!`);
@@ -384,32 +347,20 @@ function applyStun(room: Room, actor: Player, target: Player, turns: number): bo
 function checkDeath(room: Room, actorToken: string, targetToken: string): boolean {
   const actor  = room.players[actorToken];
   const target = room.players[targetToken];
-
   const actorDead  = actor  && actor.hp  <= 0;
   const targetDead = target && target.hp <= 0;
-
   if (actorDead && targetDead) {
-    room.gameOver = true;
-    room.winnerId = null;
-    room.isDraw   = true;
+    room.gameOver = true; room.winnerId = null; room.isDraw = true;
     addLog(room, `💀 BOTH WARRIORS FALL — IT'S A DRAW!`);
     return true;
   }
-  if (targetDead) {
-    endGame(room, actorToken);
-    return true;
-  }
-  if (actorDead) {
-    endGame(room, targetToken);
-    return true;
-  }
+  if (targetDead) { endGame(room, actorToken); return true; }
+  if (actorDead)  { endGame(room, targetToken); return true; }
   return false;
 }
 
 function endGame(room: Room, winnerToken: string) {
-  room.gameOver = true;
-  room.winnerId = winnerToken;
-  room.isDraw   = false;
+  room.gameOver = true; room.winnerId = winnerToken; room.isDraw = false;
   const winner = room.players[winnerToken];
   const loserToken = getOpponentToken(room, winnerToken);
   const loser = loserToken ? room.players[loserToken] : null;
@@ -462,15 +413,15 @@ function startTurn(room: Room, token: string) {
   }
 
   if (player.neutronStarTicks > 0) {
-    player.hp = Math.max(0, player.hp - 15);
+    player.hp = Math.max(0, player.hp - 12);
     player.neutronStarTicks--;
-    addLog(room, `⭐ NEUTRON STAR deals 15 delayed damage to ${player.name}! (${player.neutronStarTicks} ticks left)`);
+    addLog(room, `⭐ NEUTRON STAR deals 12 delayed damage to ${player.name}! (${player.neutronStarTicks} ticks left)`);
     const oppToken = getOpponentToken(room, token);
     if (player.hp <= 0 && oppToken) { endGame(room, oppToken); return; }
   }
 
   if (player.regenStacks > 0) {
-    const regen = player.regenStacks * 10;
+    const regen = player.regenStacks * 13;
     const healed = applyHeal(room, player, regen);
     if (healed > 0) addLog(room, `💚 ${player.name} regenerates ${healed} HP! (${player.regenStacks} stack(s))`);
     player.regenStacks = Math.max(0, player.regenStacks - 1);
@@ -486,7 +437,7 @@ function startTurn(room: Room, token: string) {
 
   if (player.plagueStacks > 0) {
     player.hp = Math.max(0, player.hp - 8);
-    player.plagueStacks--;
+    player.plagueStacks = Math.max(0, player.plagueStacks - 1);
     addLog(room, `🦠 ${player.name} suffers plague! 8 damage (${player.plagueStacks} turns left)`);
     const oppToken = getOpponentToken(room, token);
     if (player.hp <= 0 && oppToken) { endGame(room, oppToken); return; }
@@ -495,12 +446,20 @@ function startTurn(room: Room, token: string) {
   room.turn = token;
 }
 
+// ── resolveCard ───────────────────────────────────────────────────
 function resolveCard(room: Room, actorToken: string, cardId: CardId) {
   const actor = room.players[actorToken];
   const targetToken = getOpponentToken(room, actorToken);
   if (!targetToken) return;
   const target = room.players[targetToken];
+
   actor.lastCard = cardId;
+
+  // BUG FIX: Save prevCardDmg BEFORE zeroing lastCardDmg.
+  // echo_strike needs the previous card's damage, but lastCardDmg gets reset to 0
+  // at the top of every resolveCard call — so we capture it here first.
+  const prevCardDmg = actor.lastCardDmg;
+  actor.lastCardDmg = 0;
 
   const idx = actor.hand.indexOf(cardId);
   if (idx !== -1) actor.hand.splice(idx, 1);
@@ -510,20 +469,23 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
   switch (cardId) {
     // ── COMMON ──────────────────────────────────────────────────
     case "slash": {
-      const d = dealDamage(room, actor, target, 18, "slash");
+      const d = dealDamage(room, actor, target, 14, "slash");
+      actor.lastCardDmg = Math.max(0, d);
       if (d > 0) {
-        actor.lastCardDmg = d;
         addLog(room, `⚔ ${actor.name} slashed ${target.name} for ${d} damage!`);
         narration = `${actor.name} draws their blade and slashes ${target.name} for ${d} damage!`;
+      } else {
+        addLog(room, `⚔ Slash — blocked or reflected!`);
+        narration = `${actor.name}'s slash was stopped cold!`;
       }
       break;
     }
     case "weak_jab": {
       const d = dealDamage(room, actor, target, 8, "weak jab");
+      actor.lastCardDmg = Math.max(0, d);
       const drawn = drawOne(actor.hand as CardId[]);
       actor.hand.push(drawn);
       if (d > 0) {
-        actor.lastCardDmg = d;
         addLog(room, `👊 ${actor.name} weak jab — ${d} DMG + drew ${CARD_NAMES[drawn]}!`);
         narration = `${actor.name} throws a quick jab for ${d} damage and draws ${CARD_NAMES[drawn]}!`;
       } else {
@@ -534,15 +496,15 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     }
     case "fumble": {
       const d = dealDamage(room, actor, target, 12, "fumble");
-      if (d > 0) actor.lastCardDmg = d;
+      actor.lastCardDmg = Math.max(0, d);
       if (Math.random() < 0.30) {
         actor.skipTurns = Math.max(actor.skipTurns, 1);
         actor.stunsSuffered++;
-        addLog(room, `🤦 ${actor.name} FUMBLED! ${d > 0 ? d : 0} damage... and stunned themselves!`);
-        narration = `${actor.name} trips over themselves! ${d > 0 ? d : 0} damage but they stun THEMSELVES!`;
+        addLog(room, `🤦 ${actor.name} FUMBLED! ${actor.lastCardDmg} damage... and stunned themselves!`);
+        narration = `${actor.name} trips over themselves! ${actor.lastCardDmg} damage but they stun THEMSELVES!`;
       } else {
-        addLog(room, `🤦 ${actor.name} fumbled awkwardly but got ${d > 0 ? d : 0} damage through.`);
-        narration = `${actor.name} fumbles the strike but lands ${d > 0 ? d : 0} damage. Lucky this time.`;
+        addLog(room, `🤦 ${actor.name} fumbled awkwardly but got ${actor.lastCardDmg} damage through.`);
+        narration = `${actor.name} fumbles the strike but lands ${actor.lastCardDmg} damage. Lucky this time.`;
       }
       break;
     }
@@ -550,21 +512,21 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     // ── UNCOMMON ────────────────────────────────────────────────
     case "heavy_blow": {
       const d = dealDamage(room, actor, target, 20, "heavy blow");
+      actor.lastCardDmg = Math.max(0, d);
       if (d > 0) {
-        actor.lastCardDmg = d;
         const stunned = applyStun(room, actor, target, 1);
-        if (stunned) {
-          addLog(room, `💥 HEAVY BLOW — ${d} damage + STUN!`);
-          narration = `${actor.name} winds up and SMASHES ${target.name} for ${d} damage! The crushing blow STUNS them!`;
-        } else {
-          addLog(room, `💥 HEAVY BLOW — ${d} damage (stun on cooldown)`);
-          narration = `${actor.name} smashes for ${d} damage! Stun is on cooldown — ${target.name} stays standing.`;
-        }
+        addLog(room, `💥 HEAVY BLOW — ${d} damage${stunned ? " + STUN!" : " (stun on cooldown)"}`);
+        narration = stunned
+          ? `${actor.name} winds up and SMASHES ${target.name} for ${d} damage! The crushing blow STUNS them!`
+          : `${actor.name} smashes for ${d} damage! Stun is on cooldown — ${target.name} stays standing.`;
+      } else {
+        addLog(room, `💥 Heavy Blow — blocked or reflected!`);
+        narration = `${actor.name}'s heavy blow was deflected!`;
       }
       break;
     }
     case "heal": {
-      const healed = applyHeal(room, actor, 25);
+      const healed = applyHeal(room, actor, 32);
       if (healed > 0) {
         addLog(room, `♥ ${actor.name} healed ${healed} HP!`);
         narration = `${actor.name} mends their wounds, recovering ${healed} HP!`;
@@ -588,24 +550,27 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     }
     case "poison_dart": {
       const d = dealDamage(room, actor, target, 10, "poison dart");
+      actor.lastCardDmg = Math.max(0, d);
       if (d > 0) {
-        actor.lastCardDmg = d;
         target.poisoned = 8;
-        addLog(room, `☠ ${actor.name} poisoned ${target.name}! 10 + 8 poison next turn.`);
+        addLog(room, `☠ ${actor.name} poisoned ${target.name}! ${d} + 8 poison next turn.`);
         narration = `${actor.name} fires a toxic dart! ${target.name} takes ${d} damage and is POISONED for 8 next turn!`;
+      } else {
+        addLog(room, `☠ Poison Dart — blocked! No poison applied.`);
+        narration = `${actor.name}'s dart was blocked — no poison today!`;
       }
       break;
     }
     case "taunt": {
       const d = dealDamage(room, actor, target, 8, "taunt");
-      if (d > 0) actor.lastCardDmg = d;
+      actor.lastCardDmg = Math.max(0, d);
       const stunned = applyStun(room, actor, target, 1);
       if (stunned) {
-        addLog(room, `😤 ${actor.name} taunts ${target.name}! ${d > 0 ? d : 0} DMG + STUNNED!`);
-        narration = `${actor.name} gets in ${target.name}'s face — ${d > 0 ? d : 0} damage and the foe is STUNNED with rage!`;
+        addLog(room, `😤 ${actor.name} taunts ${target.name}! ${actor.lastCardDmg} DMG + STUNNED!`);
+        narration = `${actor.name} gets in ${target.name}'s face — ${actor.lastCardDmg} damage and the foe is STUNNED with rage!`;
       } else {
-        addLog(room, `😤 ${actor.name} taunts! ${d > 0 ? d : 0} DMG (stun on cooldown)`);
-        narration = `${actor.name} hurls insults for ${d > 0 ? d : 0} damage, but the stun is on cooldown!`;
+        addLog(room, `😤 ${actor.name} taunts! ${actor.lastCardDmg} DMG (stun on cooldown)`);
+        narration = `${actor.name} hurls insults for ${actor.lastCardDmg} damage, but the stun is on cooldown!`;
       }
       break;
     }
@@ -613,10 +578,10 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       if (target.hand.length > 0) {
         const ridx = Math.floor(Math.random() * target.hand.length);
         const burned = target.hand.splice(ridx, 1)[0] as CardId;
-        addLog(room, `🔥 ${actor.name} burned ${target.name}'s ${CARD_NAMES[burned]}!`);
         const d = dealDamage(room, actor, target, 12, "mana burn");
-        if (d > 0) actor.lastCardDmg = d;
-        narration = `${actor.name} ignites ${target.name}'s ${CARD_NAMES[burned]}! Destroyed + ${d > 0 ? d : 0} damage.`;
+        actor.lastCardDmg = Math.max(0, d);
+        addLog(room, `🔥 ${actor.name} burned ${target.name}'s ${CARD_NAMES[burned]}! +${actor.lastCardDmg} DMG`);
+        narration = `${actor.name} ignites ${target.name}'s ${CARD_NAMES[burned]}! Destroyed + ${actor.lastCardDmg} damage.`;
       } else {
         addLog(room, `🔥 Mana Burn — nothing to burn!`);
         narration = `${actor.name} tries to burn a card... but ${target.name} has nothing!`;
@@ -625,48 +590,45 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     }
     case "ice_spike": {
       const d = dealDamage(room, actor, target, 15, "ice spike");
+      actor.lastCardDmg = Math.max(0, d);
       if (d > 0) {
-        actor.lastCardDmg = d;
         const stunned = applyStun(room, actor, target, 1);
-        if (stunned) {
-          addLog(room, `🧊 ICE SPIKE — ${d} DMG + stunned 1 turn!`);
-          narration = `${actor.name} launches a massive ice spike! ${target.name} takes ${d} damage and is FROZEN solid!`;
-        } else {
-          addLog(room, `🧊 ICE SPIKE — ${d} DMG (stun on cooldown!)`);
-          narration = `${actor.name} launches an ice spike for ${d} damage, but the stun is on cooldown!`;
-        }
-      } else if (d === 0) {
-        addLog(room, `🧊 Ice Spike blocked by shield!`);
-        narration = `${actor.name}'s ice spike shatters against ${target.name}'s shield!`;
+        addLog(room, `🧊 ICE SPIKE — ${d} DMG${stunned ? " + stunned 1 turn!" : " (stun on cooldown!)"}`);
+        narration = stunned
+          ? `${actor.name} launches a massive ice spike! ${target.name} takes ${d} damage and is FROZEN solid!`
+          : `${actor.name} launches an ice spike for ${d} damage, but the stun is on cooldown!`;
+      } else {
+        addLog(room, `🧊 Ice Spike — blocked or reflected!`);
+        narration = `${actor.name}'s ice spike shatters harmlessly!`;
       }
       break;
     }
     case "regen": {
       actor.regenStacks = Math.min(actor.regenStacks + 3, 6);
-      addLog(room, `💚 REGEN activated — ${actor.regenStacks * 10} HP/turn!`);
-      narration = `${actor.name} activates REGEN — recovering ${actor.regenStacks * 10} HP per turn for 3 turns!`;
+      addLog(room, `💚 REGEN activated — ${actor.regenStacks * 13} HP/turn!`);
+      narration = `${actor.name} activates REGEN — recovering ${actor.regenStacks * 13} HP per turn for 3 turns!`;
       break;
     }
     case "war_cry": {
       actor.warCryBonus = 15;
       addLog(room, `📯 WAR CRY — ${actor.name}'s next attack deals +15 bonus DMG!`);
-      narration = `${actor.name} lets out a WAR CRY! Their next strike will hit 15 DMG harder — and it stacks with Mana Surge!`;
+      narration = `${actor.name} lets out a WAR CRY! Their next strike will hit 15 DMG harder — stacks with Mana Surge!`;
       break;
     }
 
     // ── RARE ────────────────────────────────────────────────────
     case "gamble": {
       if (Math.random() < 0.5) {
-        const d = dealDamage(room, actor, target, 35, "gamble");
-        if (d > 0) {
-          actor.lastCardDmg = d;
-          addLog(room, `🎲 GAMBLED AND WON — ${d} damage!`);
-          narration = `${actor.name} rolled the dice and WON! ${target.name} takes ${d} damage!`;
-        }
+        const d = dealDamage(room, actor, target, 28, "gamble");
+        actor.lastCardDmg = Math.max(0, d);
+        addLog(room, `🎲 GAMBLED AND WON — ${actor.lastCardDmg} damage!`);
+        narration = `${actor.name} rolled the dice and WON! ${target.name} takes ${actor.lastCardDmg} damage!`;
       } else {
         actor.hp = Math.max(0, actor.hp - 15);
         addLog(room, `🎲 GAMBLED AND LOST — 15 self-damage!`);
         narration = `${actor.name} rolled the dice and LOST. The gods laugh as they take 15 damage!`;
+        // BUG FIX: self-damage on a loss could kill the actor — check for death
+        if (actor.hp <= 0) { endGame(room, targetToken); broadcast(room); return; }
       }
       break;
     }
@@ -678,6 +640,11 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
         const copyId = target.lastCard;
         addLog(room, `🪞 ${actor.name} mirrors ${CARD_NAMES[copyId]}!`);
         narration = `${actor.name} mirrors ${target.name}'s ${CARD_NAMES[copyId]}!`;
+        room.lastNarration = narration;
+        // BUG FIX: inject card into hand and let resolveCard handle everything cleanly,
+        // including setting lastCard and lastCardDmg correctly for the copied card.
+        // The old code set actor.lastCardDmg = 0 before the recursive call which broke
+        // echo_strike chaining, and left actor.lastCard = "steal" instead of the copy's id.
         actor.hand.unshift(copyId);
         resolveCard(room, actorToken, copyId);
         return;
@@ -694,54 +661,69 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     case "double_strike": {
       let total = 0;
       for (let i = 0; i < 2; i++) {
-        const d = dealDamage(room, actor, target, 15, `strike ${i + 1}`);
+        const d = dealDamage(room, actor, target, 14, `strike ${i + 1}`);
         if (d > 0) total += d; else break;
       }
+      actor.lastCardDmg = total;
       if (total > 0) {
-        actor.lastCardDmg = total;
         addLog(room, `⚡ DOUBLE STRIKE — ${total} total!`);
         narration = `${actor.name} blurs into motion — striking TWICE for ${total} total damage!`;
+      } else {
+        addLog(room, `⚡ Double Strike — both hits blocked!`);
+        narration = `${actor.name} strikes twice but both blows are stopped!`;
       }
       break;
     }
     case "vampire_bite": {
       const d = dealDamage(room, actor, target, 16, "vampire bite");
+      actor.lastCardDmg = Math.max(0, d);
       if (d > 0) {
-        actor.lastCardDmg = d;
         const stolen = Math.floor(d / 2);
         const healed = applyHeal(room, actor, stolen);
         addLog(room, `🧛 VAMPIRE BITE — ${d} drained, +${healed} HP!`);
         narration = `${actor.name} sinks their fangs! Drains ${d} HP and restores ${healed} to themselves!`;
+      } else {
+        addLog(room, `🧛 Vampire Bite — blocked! No lifesteal.`);
+        narration = `${actor.name}'s bite was blocked — no blood tonight!`;
       }
       break;
     }
     case "earthquake": {
-      const d = dealDamage(room, actor, target, 28, "earthquake");
+      const d = dealDamage(room, actor, target, 24, "earthquake");
+      actor.lastCardDmg = Math.max(0, d);
+      // Self-damage always applies even if the attack was blocked
+      actor.hp = Math.max(0, actor.hp - 8);
       if (d > 0) {
-        actor.lastCardDmg = d;
-        actor.hp = Math.max(0, actor.hp - 8);
         addLog(room, `🌍 EARTHQUAKE — ${d} to foe, 8 self-damage!`);
         narration = `EARTHQUAKE! ${target.name} takes ${d} damage, but tremors deal 8 to ${actor.name} too!`;
+      } else {
+        addLog(room, `🌍 Earthquake — blocked! But 8 self-damage still hits.`);
+        narration = `${actor.name}'s earthquake is blocked — but the tremors still hurt them for 8!`;
       }
+      // BUG FIX: actor can die from self-damage if they were already low HP
+      if (actor.hp <= 0) { endGame(room, targetToken); broadcast(room); return; }
       break;
     }
     case "berserker": {
       const ratio = 1 - actor.hp / actor.maxHp;
-      const dmg = Math.floor(8 + ratio * 32);
-      const d = dealDamage(room, actor, target, Math.min(dmg, 40), "berserker");
+      const dmg = Math.floor(10 + ratio * 35);
+      const d = dealDamage(room, actor, target, Math.min(dmg, 45), "berserker");
+      actor.lastCardDmg = Math.max(0, d);
       if (d > 0) {
-        actor.lastCardDmg = d;
         addLog(room, `😡 BERSERKER — ${d} rage damage!`);
         narration = `${actor.name} BERSERKS! The lower their HP, the harder they hit — ${d} furious damage!`;
+      } else {
+        addLog(room, `😡 Berserker — blocked!`);
+        narration = `${actor.name} rages... but the blow is absorbed!`;
       }
       break;
     }
     case "ghost_step": {
       actor.shield = true;
       const d = dealDamage(room, actor, target, 12, "ghost counter");
-      if (d > 0) actor.lastCardDmg = d;
-      addLog(room, `👻 GHOST STEP — shield + ${d > 0 ? d : 0} counter!`);
-      narration = `${actor.name} phases through reality! Shield raised + ${d > 0 ? d : 0} counter damage!`;
+      actor.lastCardDmg = Math.max(0, d);
+      addLog(room, `👻 GHOST STEP — shield + ${actor.lastCardDmg} counter!`);
+      narration = `${actor.name} phases through reality! Shield raised + ${actor.lastCardDmg} counter damage!`;
       break;
     }
     case "reflect": {
@@ -751,16 +733,19 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       break;
     }
     case "lucky_shot": {
-      const dmg = Math.floor(Math.random() * 46) + 5;
+      const dmg = Math.floor(Math.random() * 36) + 5;
       const d = dealDamage(room, actor, target, dmg, "lucky shot");
+      actor.lastCardDmg = Math.max(0, d);
       if (d > 0) {
-        actor.lastCardDmg = d;
-        addLog(room, `🍀 LUCKY SHOT — ${d} damage!${d >= 40 ? " INSANE!" : d <= 10 ? " Barely..." : ""}`);
-        narration = d >= 40
+        addLog(room, `🍀 LUCKY SHOT — ${d} damage!${d >= 35 ? " INSANE!" : d <= 10 ? " Barely..." : ""}`);
+        narration = d >= 35
           ? `LUCKY SHOT hits for ${d} INSANE damage! Absolutely blessed!`
           : d <= 10
           ? `Lucky shot... barely ${d} damage. Rough.`
           : `Lucky shot! ${d} damage from pure chaos.`;
+      } else {
+        addLog(room, `🍀 Lucky Shot — blocked!`);
+        narration = `Even luck can't pierce that shield!`;
       }
       break;
     }
@@ -790,30 +775,30 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       break;
     }
     case "explosion": {
-      const d = dealDamage(room, actor, target, 30, "explosion");
-      if (d > 0) actor.lastCardDmg = d;
+      const d = dealDamage(room, actor, target, 28, "explosion");
+      actor.lastCardDmg = Math.max(0, d);
       if (actor.hand.length > 0) {
         const ridx = Math.floor(Math.random() * actor.hand.length);
         const lost = actor.hand.splice(ridx, 1)[0] as CardId;
-        addLog(room, `💣 EXPLOSION — ${d > 0 ? d : 0} damage! Lost ${CARD_NAMES[lost]} from own hand.`);
-        narration = `${actor.name} detonates for ${d > 0 ? d : 0} damage! But the blast destroys ${CARD_NAMES[lost]} from their own hand!`;
+        addLog(room, `💣 EXPLOSION — ${actor.lastCardDmg} damage! Lost ${CARD_NAMES[lost]} from own hand.`);
+        narration = `${actor.name} detonates for ${actor.lastCardDmg} damage! But the blast destroys ${CARD_NAMES[lost]} from their own hand!`;
       } else {
-        addLog(room, `💣 EXPLOSION — ${d > 0 ? d : 0} damage!`);
-        narration = `${actor.name} detonates for ${d > 0 ? d : 0} damage!`;
+        addLog(room, `💣 EXPLOSION — ${actor.lastCardDmg} damage!`);
+        narration = `${actor.name} detonates for ${actor.lastCardDmg} damage!`;
       }
       break;
     }
     case "shockwave": {
       const isStunned = target.skipTurns > 0;
-      const totalDmg = isStunned ? 45 : 20;
+      const totalDmg = isStunned ? 42 : 18;
       const d = dealDamage(room, actor, target, totalDmg, "shockwave");
-      if (d > 0) actor.lastCardDmg = d;
+      actor.lastCardDmg = Math.max(0, d);
       if (isStunned) {
-        addLog(room, `🌊 SHOCKWAVE — ${d > 0 ? d : 0} CRUSHING damage (foe was stunned)!`);
-        narration = `${actor.name} sends a shockwave crashing through the stunned ${target.name}! ${d > 0 ? d : 0} CRUSHING damage!`;
+        addLog(room, `🌊 SHOCKWAVE — ${actor.lastCardDmg} CRUSHING damage (foe was stunned)!`);
+        narration = `${actor.name} sends a shockwave crashing through the stunned ${target.name}! ${actor.lastCardDmg} CRUSHING damage!`;
       } else {
-        addLog(room, `🌊 SHOCKWAVE — ${d > 0 ? d : 0} damage (no stun bonus)`);
-        narration = `${actor.name} fires a shockwave for ${d > 0 ? d : 0} damage. Would've hit harder if ${target.name} was stunned!`;
+        addLog(room, `🌊 SHOCKWAVE — ${actor.lastCardDmg} damage (no stun bonus)`);
+        narration = `${actor.name} fires a shockwave for ${actor.lastCardDmg} damage. Would've hit harder if ${target.name} was stunned!`;
       }
       break;
     }
@@ -821,44 +806,47 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       const isStunned = target.skipTurns > 0;
       if (isStunned) {
         target.skipTurns += 1;
-        const d = dealDamage(room, actor, target, 25, "chain stun");
-        if (d > 0) actor.lastCardDmg = d;
-        addLog(room, `⛓ CHAIN STUN — foe already stunned! ${d > 0 ? d : 0} DMG + stun extended!`);
-        narration = `${actor.name} chains the stun! ${target.name} is KEPT DOWN — ${d > 0 ? d : 0} damage and their stun is extended!`;
+        const d = dealDamage(room, actor, target, 22, "chain stun");
+        actor.lastCardDmg = Math.max(0, d);
+        addLog(room, `⛓ CHAIN STUN — foe already stunned! ${actor.lastCardDmg} DMG + stun extended!`);
+        narration = `${actor.name} chains the stun! ${target.name} is KEPT DOWN — ${actor.lastCardDmg} damage and their stun is extended!`;
       } else {
         const d = dealDamage(room, actor, target, 10, "chain stun");
-        if (d > 0) actor.lastCardDmg = d;
-        addLog(room, `⛓ Chain Stun — ${d > 0 ? d : 0} DMG (no stun active, use when foe is stunned!)`);
-        narration = `${actor.name} swings the chain for ${d > 0 ? d : 0} damage. Combo with a stun first for full power!`;
+        actor.lastCardDmg = Math.max(0, d);
+        addLog(room, `⛓ Chain Stun — ${actor.lastCardDmg} DMG (no stun active)`);
+        narration = `${actor.name} swings the chain for ${actor.lastCardDmg} damage. Combo with a stun first for full power!`;
       }
       break;
     }
     case "sacred_spring": {
-      const healed = applyHeal(room, actor, 30);
+      const healed = applyHeal(room, actor, 35);
       actor.regenStacks = Math.min(actor.regenStacks + 2, 6);
       addLog(room, `🌿 SACRED SPRING — healed ${healed} HP + 2 regen stacks!`);
-      narration = `${actor.name} bathes in the Sacred Spring! Restored ${healed} HP and gained 2 regen stacks for ${actor.regenStacks * 10} HP/turn!`;
+      narration = `${actor.name} bathes in the Sacred Spring! Restored ${healed} HP and gained 2 regen stacks!`;
       break;
     }
 
     // ── CURSED ──────────────────────────────────────────────────
     case "cursed_blade": {
-      const d = dealDamage(room, actor, target, 45, "cursed blade");
-      if (d > 0) {
-        actor.lastCardDmg = d;
-        addLog(room, `🩸 CURSED BLADE — ${d} damage!`);
-        narration = `${actor.name} unleashes the Cursed Blade — ${d} devastating damage! Pure corrupted power.`;
-      }
+      const d = dealDamage(room, actor, target, 36, "cursed blade");
+      actor.lastCardDmg = Math.max(0, d);
+      addLog(room, `🩸 CURSED BLADE — ${actor.lastCardDmg} damage!`);
+      narration = `${actor.name} unleashes the Cursed Blade — ${actor.lastCardDmg} devastating damage! Pure corrupted power.`;
       break;
     }
     case "blood_pact": {
-      actor.hp = Math.max(0, actor.hp - 15);
-      const d = dealDamage(room, actor, target, 40, "blood pact");
-      if (d > 0) {
-        actor.lastCardDmg = d;
-        addLog(room, `🩸 BLOOD PACT — sacrifice 15, deal ${d}!`);
-        narration = `${actor.name} seals a Blood Pact! Sacrifices 15 HP to unleash ${d} dark damage!`;
+      actor.hp = Math.max(0, actor.hp - 10);
+      // BUG FIX: check if the self-sacrifice kills the actor before dealing damage
+      if (actor.hp <= 0) {
+        addLog(room, `🩸 BLOOD PACT — ${actor.name} bled out from their own pact!`);
+        endGame(room, targetToken);
+        broadcast(room);
+        return;
       }
+      const d = dealDamage(room, actor, target, 32, "blood pact");
+      actor.lastCardDmg = Math.max(0, d);
+      addLog(room, `🩸 BLOOD PACT — sacrifice 10, deal ${actor.lastCardDmg}!`);
+      narration = `${actor.name} seals a Blood Pact! Sacrifices 10 HP to unleash ${actor.lastCardDmg} dark damage!`;
       break;
     }
     case "soul_drain": {
@@ -870,42 +858,51 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
         target.regenStacks = 0;
         const dmg = stacks * 8;
         const d = dealDamage(room, actor, target, dmg, "soul drain");
+        actor.lastCardDmg = Math.max(0, d);
         const healed = applyHeal(room, actor, dmg);
-        if (d > 0) actor.lastCardDmg = d;
-        addLog(room, `🌙 SOUL DRAIN — drained ${stacks} regen stack(s)! ${d > 0 ? d : 0} DMG + ${healed} HP stolen!`);
-        narration = `${actor.name} rips ${stacks} regen stack(s) from ${target.name}'s soul! ${d > 0 ? d : 0} damage and ${healed} HP stolen!`;
+        addLog(room, `🌙 SOUL DRAIN — drained ${stacks} regen stack(s)! ${actor.lastCardDmg} DMG + ${healed} HP stolen!`);
+        narration = `${actor.name} rips ${stacks} regen stack(s) from ${target.name}'s soul! ${actor.lastCardDmg} damage and ${healed} HP stolen!`;
       }
       break;
     }
 
     // ── CORRUPTED ───────────────────────────────────────────────
     case "cursed_heal": {
-      const healed = applyHeal(room, actor, 40);
+      const healed = applyHeal(room, actor, 42);
       const oppHeal = applyHeal(room, target, 20);
       addLog(room, `💜 CURSED HEAL — +${healed} HP... but ${target.name} heals ${oppHeal} too!`);
       narration = `${actor.name} drinks a cursed potion, healing ${healed} HP! But the corruption spreads — ${target.name} also heals ${oppHeal} HP!`;
       break;
     }
     case "betrayal": {
-      const d = dealDamage(room, actor, target, 30, "betrayal");
-      if (d > 0) actor.lastCardDmg = d;
+      const d = dealDamage(room, actor, target, 28, "betrayal");
+      actor.lastCardDmg = Math.max(0, d);
       actor.hp = Math.max(0, actor.hp - 10);
       const rareCards: CardId[] = ["gamble", "divine_shield", "double_strike", "vampire_bite", "reflect", "chain_stun"];
       const gift = rareCards[Math.floor(Math.random() * rareCards.length)];
       target.hand.push(gift);
-      addLog(room, `🗡 BETRAYAL — ${d > 0 ? d : 0} to foe, 10 self-dmg, gave ${CARD_NAMES[gift]} to ${target.name}!`);
-      narration = `${actor.name} betrays all logic! ${d > 0 ? d : 0} damage, 10 self-damage, and gifts ${CARD_NAMES[gift]} to ${target.name}. Chaos!`;
+      addLog(room, `🗡 BETRAYAL — ${actor.lastCardDmg} to foe, 10 self-dmg, gave ${CARD_NAMES[gift]} to ${target.name}!`);
+      narration = `${actor.name} betrays all logic! ${actor.lastCardDmg} damage, 10 self-damage, and gifts ${CARD_NAMES[gift]} to ${target.name}. Chaos!`;
+      // BUG FIX: self-damage could kill the actor
+      if (actor.hp <= 0) { endGame(room, targetToken); broadcast(room); return; }
       break;
     }
     case "plague": {
-      actor.plagueStacks = 3;
-      target.plagueStacks = 3;
+      actor.plagueStacks = Math.min(actor.plagueStacks + 3, 6);
+      target.plagueStacks = Math.min(target.plagueStacks + 3, 6);
       addLog(room, `🦠 PLAGUE — both players infected! 8 damage/turn for 3 turns!`);
       narration = `${actor.name} releases the PLAGUE! Both players are infected — 8 damage per turn for 3 turns each!`;
       break;
     }
     case "sacrifice": {
       actor.hp = Math.max(0, actor.hp - 20);
+      // BUG FIX: self-damage could kill the actor before they even get the cards
+      if (actor.hp <= 0) {
+        addLog(room, `💀 SACRIFICE — ${actor.name} gave too much and perished!`);
+        endGame(room, targetToken);
+        broadcast(room);
+        return;
+      }
       const drawn: CardId[] = [];
       for (let i = 0; i < 4; i++) drawn.push(drawOne([...actor.hand as CardId[], ...drawn]));
       actor.hand.push(...drawn);
@@ -958,31 +955,35 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       break;
     }
     case "blood_transfusion": {
-      // Steal 35 HP from foe — they lose it, you gain it. Both capped at 0/maxHp.
-      const steal = Math.min(35, target.hp); // can't steal more than they have
+      const steal = Math.min(30, target.hp);
       target.hp = Math.max(0, target.hp - steal);
       const healed = applyHeal(room, actor, steal);
       addLog(room, `🩺 BLOOD TRANSFUSION — stole ${steal} HP from ${target.name}! Gained ${healed} HP.`);
       narration = `${actor.name} performs a dark BLOOD TRANSFUSION! Rips ${steal} HP from ${target.name}'s veins and absorbs ${healed} HP!`;
+      // BUG FIX: direct HP drain (bypasses dealDamage) so death must be checked manually
+      if (target.hp <= 0) { endGame(room, actorToken); broadcast(room); return; }
       break;
     }
 
     // ── LEGENDARY ───────────────────────────────────────────────
     case "freeze": {
-      const d = dealDamage(room, actor, target, 30, "freeze");
-      if (d > 0) actor.lastCardDmg = d;
+      const d = dealDamage(room, actor, target, 28, "freeze");
+      actor.lastCardDmg = Math.max(0, d);
       target.healBlocked = 3;
-      addLog(room, `❄ FREEZE — ${d > 0 ? d : 0} damage + ${target.name}'s healing BLOCKED for 3 turns!`);
-      narration = `${actor.name} encases ${target.name} in cosmic ice — ${d > 0 ? d : 0} damage and their healing is FROZEN for 3 turns!`;
+      addLog(room, `❄ FREEZE — ${actor.lastCardDmg} damage + ${target.name}'s healing BLOCKED for 3 turns!`);
+      narration = `${actor.name} encases ${target.name} in cosmic ice — ${actor.lastCardDmg} damage and their healing is FROZEN for 3 turns!`;
       break;
     }
     case "divine_retribution": {
       let total = 0;
-      const d1 = dealDamage(room, actor, target, 25, "first smite");
-      if (d1 > 0) total += d1;
-      addLog(room, `⚖ DIVINE RETRIBUTION — First smite: ${d1 > 0 ? d1 : "blocked"}!`);
-      if (d1 >= 0) {
-        const d2 = dealDamage(room, actor, target, 25, "second smite");
+      const d1 = dealDamage(room, actor, target, 20, "first smite");
+      // BUG FIX: only fire the second smite if the first actually landed (d1 > 0).
+      // The old code used d1 >= 0 which meant a blocked first hit (d1 === 0) would
+      // still trigger a second smite — effectively ignoring the shield.
+      if (d1 > 0) {
+        total += d1;
+        addLog(room, `⚖ DIVINE RETRIBUTION — First smite: ${d1}!`);
+        const d2 = dealDamage(room, actor, target, 20, "second smite");
         if (d2 > 0) {
           total += d2;
           const stunned = applyStun(room, actor, target, 1);
@@ -990,33 +991,34 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
           narration = `${actor.name} calls down DIVINE RETRIBUTION! Two holy smites for ${total} total damage!${stunned ? " The second blow STUNS!" : ""}`;
         } else {
           addLog(room, `⚖ DIVINE RETRIBUTION — Second smite: blocked!`);
-          narration = `${actor.name} calls down DIVINE RETRIBUTION! First smite: ${d1 > 0 ? d1 : 0} damage, second was blocked!`;
+          narration = `${actor.name} calls down DIVINE RETRIBUTION! First smite: ${d1}, second was blocked!`;
         }
       } else {
-        narration = `${actor.name} calls down DIVINE RETRIBUTION — but it was reflected/absorbed!`;
+        addLog(room, `⚖ DIVINE RETRIBUTION — First smite blocked or reflected!`);
+        narration = `${actor.name} calls down DIVINE RETRIBUTION — both smites shut down!`;
       }
-      if (total > 0) actor.lastCardDmg = total;
+      actor.lastCardDmg = total;
       break;
     }
     case "titans_wrath": {
       const diff = Math.abs(actor.hp - target.hp);
-      const dmg = Math.max(10, diff);
+      const dmg = Math.min(Math.max(8, diff), 60);
       const d = dealDamage(room, actor, target, dmg, "titan's wrath");
-      if (d > 0) actor.lastCardDmg = d;
-      addLog(room, `🔱 TITAN'S WRATH — ${d > 0 ? d : 0} damage (HP diff: ${diff})!`);
-      narration = `${actor.name} channels TITAN'S WRATH! Deals ${d > 0 ? d : 0} damage — the greater the HP gap, the harder the strike!`;
+      actor.lastCardDmg = Math.max(0, d);
+      addLog(room, `🔱 TITAN'S WRATH — ${actor.lastCardDmg} damage (HP diff: ${diff})!`);
+      narration = `${actor.name} channels TITAN'S WRATH! Deals ${actor.lastCardDmg} damage — the greater the HP gap, the harder the strike!`;
       break;
     }
     case "last_stand": {
-      if (actor.hp <= 35) {
-        const d = dealDamage(room, actor, target, 70, "last stand");
+      if (actor.hp <= 40) {
+        const d = dealDamage(room, actor, target, 55, "last stand");
+        actor.lastCardDmg = Math.max(0, d);
         actor.shield = true;
-        if (d > 0) actor.lastCardDmg = d;
-        addLog(room, `🛡 LAST STAND — ${d > 0 ? d : 0} MASSIVE damage + shield raised!`);
-        narration = `${actor.name} is on the brink! LAST STAND triggers — ${d > 0 ? d : 0} MASSIVE damage AND a desperate shield!`;
+        addLog(room, `🛡 LAST STAND — ${actor.lastCardDmg} MASSIVE damage + shield raised!`);
+        narration = `${actor.name} is on the brink! LAST STAND triggers — ${actor.lastCardDmg} MASSIVE damage AND a desperate shield!`;
       } else {
         const d = dealDamage(room, actor, target, 5, "last stand");
-        if (d > 0) actor.lastCardDmg = d;
+        actor.lastCardDmg = Math.max(0, d);
         addLog(room, `🛡 Last Stand... only 5 damage (HP too high)`);
         narration = `${actor.name} plays Last Stand... but their HP is too high! Only 5 damage. Save it for desperate moments!`;
       }
@@ -1027,7 +1029,7 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       let stormTotal = 0;
       for (let i = 0; i < 3; i++) {
         if (Math.random() < 0.70) {
-          const d = dealDamage(room, actor, target, 15, "bolt");
+          const d = dealDamage(room, actor, target, 14, "bolt");
           if (d > 0) { stormTotal += d; hits.push(`${d} to ${target.name}`); }
           else hits.push("blocked!");
         } else {
@@ -1035,19 +1037,26 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
           hits.push(`5 backfire!`);
         }
       }
-      if (stormTotal > 0) actor.lastCardDmg = stormTotal;
+      actor.lastCardDmg = stormTotal;
       addLog(room, `⛈ LIGHTNING STORM: ${hits.join(", ")}`);
       narration = `${actor.name} summons a LIGHTNING STORM! Three chaotic bolts — ${hits.join(", ")}!`;
+      // BUG FIX: backfire damage accumulates and can kill the actor (3× backfire = 15 self-damage)
+      if (actor.hp <= 0) { endGame(room, targetToken); broadcast(room); return; }
       break;
     }
     case "meteor": {
-      const d = dealDamage(room, actor, target, 60, "meteor", true);
-      actor.hp = Math.max(0, actor.hp - 25);
+      const d = dealDamage(room, actor, target, 48, "meteor", true);
+      actor.lastCardDmg = Math.max(0, d);
+      actor.hp = Math.max(0, actor.hp - 18);
       if (d > 0) {
-        actor.lastCardDmg = d;
-        addLog(room, `☄ METEOR — ${d} damage (bypasses shields)! 25 recoil to self.`);
-        narration = `${actor.name} calls down a METEOR! ${d} catastrophic damage — shields mean nothing! But 25 recoil SHATTERS ${actor.name}!`;
+        addLog(room, `☄ METEOR — ${d} damage (bypasses shields)! 18 recoil to self.`);
+        narration = `${actor.name} calls down a METEOR! ${d} catastrophic damage — shields mean nothing! But 18 recoil SHATTERS ${actor.name}!`;
+      } else {
+        addLog(room, `☄ Meteor fired — 18 self-damage taken.`);
+        narration = `${actor.name} calls down a meteor... it's absorbed somehow! Still takes 18 recoil.`;
       }
+      // BUG FIX: recoil can kill the actor, especially at low HP
+      if (actor.hp <= 0) { endGame(room, targetToken); broadcast(room); return; }
       break;
     }
     case "overflow": {
@@ -1061,26 +1070,29 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       break;
     }
     case "echo_strike": {
-      if (!actor.lastCard || actor.lastCardDmg <= 0) {
+      // BUG FIX: use prevCardDmg (captured before the reset at the top of resolveCard).
+      // actor.lastCardDmg was zeroed at the start of this call, so reading it here always
+      // returned 0, making echo_strike do nothing every time it was played.
+      if (!actor.lastCard || prevCardDmg <= 0) {
         addLog(room, `🔁 ECHO STRIKE — no previous damage to echo!`);
         narration = `${actor.name} tries to echo their last strike... but there's nothing to repeat!`;
       } else {
-        const echoDmg = actor.lastCardDmg;
-        const d = dealDamage(room, actor, target, echoDmg, "echo strike");
-        addLog(room, `🔁 ECHO STRIKE — echoes ${CARD_NAMES[actor.lastCard]} for ${d > 0 ? d : 0} damage!`);
-        narration = `${actor.name} channels an ECHO STRIKE! Replays the raw power of ${CARD_NAMES[actor.lastCard]} for ${d > 0 ? d : 0} damage!`;
+        const prevCard = actor.lastCard;
+        const d = dealDamage(room, actor, target, prevCardDmg, "echo strike");
+        actor.lastCardDmg = Math.max(0, d);
+        addLog(room, `🔁 ECHO STRIKE — echoes ${CARD_NAMES[prevCard]} for ${actor.lastCardDmg} damage!`);
+        narration = `${actor.name} channels an ECHO STRIKE! Replays the raw power of ${CARD_NAMES[prevCard]} for ${actor.lastCardDmg} damage!`;
       }
       break;
     }
     case "celestial_mend": {
-      // Heal 60 HP + cleanse ALL debuffs
       const cleansed: string[] = [];
-      if (actor.poisoned > 0)       { actor.poisoned = 0;       cleansed.push("Poison"); }
-      if (actor.plagueStacks > 0)   { actor.plagueStacks = 0;   cleansed.push("Plague"); }
-      if (actor.healBlocked > 0)    { actor.healBlocked = 0;    cleansed.push("Heal Block"); }
-      if (actor.skipTurns > 0)      { actor.skipTurns = 0;      cleansed.push("Stun"); }
-      if (actor.neutronStarTicks > 0) { actor.neutronStarTicks = 0; cleansed.push("Neutron Star"); }
-      const healed = applyHeal(room, actor, 60);
+      if (actor.poisoned > 0)           { actor.poisoned = 0;           cleansed.push("Poison"); }
+      if (actor.plagueStacks > 0)       { actor.plagueStacks = 0;       cleansed.push("Plague"); }
+      if (actor.healBlocked > 0)        { actor.healBlocked = 0;        cleansed.push("Heal Block"); }
+      if (actor.skipTurns > 0)          { actor.skipTurns = 0;          cleansed.push("Stun"); }
+      if (actor.neutronStarTicks > 0)   { actor.neutronStarTicks = 0;   cleansed.push("Neutron Star"); }
+      const healed = applyHeal(room, actor, 70);
       const cleanseMsg = cleansed.length > 0 ? ` Cleansed: ${cleansed.join(", ")}!` : " No debuffs to cleanse.";
       addLog(room, `✨ CELESTIAL MEND — +${healed} HP!${cleanseMsg}`);
       narration = cleansed.length > 0
@@ -1093,21 +1105,22 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     case "soul_swap": {
       const myHp = actor.hp;
       const theirHp = target.hp;
-      actor.hp = theirHp;
-      target.hp = myHp;
+      actor.hp  = Math.min(actor.maxHp,  theirHp);
+      target.hp = Math.min(target.maxHp, myHp);
       addLog(room, `👁 SOUL SWAP — HP totals swapped! ${actor.name}: ${actor.hp}, ${target.name}: ${target.hp}`);
       narration = `${actor.name} rips the souls from their bodies — HP SWAPPED! ${actor.name} now has ${actor.hp} HP, ${target.name} has ${target.hp} HP!`;
       break;
     }
     case "armageddon": {
-      const prevActorShield  = actor.shield;  actor.shield  = false;
-      const prevTargetShield = target.shield; target.shield = false;
-      actor.hp  = Math.max(0, actor.hp  - 50);
-      target.hp = Math.max(0, target.hp - 50);
-      actor.shield  = prevActorShield  && actor.hp  > 0;
-      target.shield = prevTargetShield && target.hp > 0;
-      addLog(room, `💥 ARMAGEDDON — both players take 50 damage! No shields!`);
-      narration = `${actor.name} triggers ARMAGEDDON! The cosmos trembles — BOTH players take 50 damage! Shields are useless!`;
+      actor.shield  = false;
+      target.shield = false;
+      actor.hp  = Math.max(0, actor.hp  - 38);
+      target.hp = Math.max(0, target.hp - 38);
+      addLog(room, `💥 ARMAGEDDON — both players take 38 damage! No shields!`);
+      narration = `${actor.name} triggers ARMAGEDDON! The cosmos trembles — BOTH players take 38 damage! Shields are useless!`;
+      // BUG FIX: direct HP reduction bypasses checkDeath — must call it explicitly.
+      // Either or both players can die from armageddon.
+      if (checkDeath(room, actorToken, targetToken)) { broadcast(room); return; }
       break;
     }
     case "void_rift": {
@@ -1118,16 +1131,16 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       break;
     }
     case "judgement": {
-      if (target.hp <= 25) {
+      if (target.hp <= 30) {
         endGame(room, actorToken);
-        addLog(room, `⚖ JUDGEMENT — ${target.name} had ≤25 HP. INSTANT WIN!`);
+        addLog(room, `⚖ JUDGEMENT — ${target.name} had ≤30 HP. INSTANT WIN!`);
         narration = `${actor.name} passes JUDGEMENT! ${target.name} had only ${target.hp} HP — they are INSTANTLY DEFEATED!`;
         broadcast(room);
         return;
       } else {
         const d = dealDamage(room, actor, target, 5, "judgement");
-        if (d > 0) actor.lastCardDmg = d;
-        addLog(room, `⚖ Judgement... only 5 damage (${target.name} has ${target.hp} HP > 25)`);
+        actor.lastCardDmg = Math.max(0, d);
+        addLog(room, `⚖ Judgement... only 5 damage (${target.name} has ${target.hp} HP > 30)`);
         narration = `${actor.name} tries to pass Judgement... but ${target.name} has ${target.hp} HP — too healthy! Only 5 damage.`;
       }
       break;
@@ -1135,26 +1148,26 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     case "time_warp": {
       actor.extraTurn = true;
       actor.extraTurnDebt = 2;
+      actor.warpTurnsLeft = 2;
       addLog(room, `⏳ TIME WARP — ${actor.name} gets 2 extra turns! Debt: skip 2 turns later.`);
       narration = `${actor.name} warps time itself! Taking 2 extra turns NOW... but will owe 2 skipped turns afterward!`;
       break;
     }
     case "phoenix_ember": {
-      if (actor.hp <= 20) {
-        // Rising from the ashes — ignore heal block for this mythic resurrection
+      if (actor.hp <= 25) {
         const oldHp = actor.hp;
-        actor.hp = Math.min(actor.maxHp, 60);
+        actor.hp = Math.min(actor.maxHp, 70);
         actor.shield = true;
-        // Also cleanse debuffs on resurrection
         actor.poisoned = 0;
         actor.plagueStacks = 0;
         actor.healBlocked = 0;
         actor.skipTurns = 0;
-        addLog(room, `🔥 PHOENIX EMBER — risen from ${oldHp} HP to 60! Shield raised! Debuffs purged!`);
-        narration = `${actor.name} was nearly dead at ${oldHp} HP... but the PHOENIX RISES! Restored to 60 HP with a shield, all debuffs burned away!`;
+        actor.neutronStarTicks = 0;
+        addLog(room, `🔥 PHOENIX EMBER — risen from ${oldHp} HP to ${actor.hp}! Shield raised! Debuffs purged!`);
+        narration = `${actor.name} was nearly dead at ${oldHp} HP... but the PHOENIX RISES! Restored to ${actor.hp} HP with a shield, all debuffs burned away!`;
       } else {
-        const healed = applyHeal(room, actor, 20);
-        addLog(room, `🔥 Phoenix Ember — healed ${healed} HP (HP was > 20, no resurrection).`);
+        const healed = applyHeal(room, actor, 22);
+        addLog(room, `🔥 Phoenix Ember — healed ${healed} HP (HP was > 25, no resurrection).`);
         narration = `${actor.name} uses Phoenix Ember... but they're too healthy for the resurrection. Just ${healed} HP restored. Save it for the brink!`;
       }
       break;
@@ -1169,28 +1182,32 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       target.hp = Math.min(target.maxHp, avg);
       addLog(room, `🕳 SINGULARITY — HP equalized to ${avg}! ${actor.name}: ${actorOld}→${avg}, ${target.name}: ${targetOld}→${avg}`);
       narration = actorOld > targetOld
-        ? `${actor.name} collapses space-time into a SINGULARITY! HP equalized at ${avg} — brutal for ${target.name}!`
+        ? `${actor.name} collapses space-time into a SINGULARITY! HP equalized at ${avg} — brutal for ${actor.name}!`
         : `${actor.name} collapses the singularity... equalized at ${avg} HP. Bold move when losing!`;
       break;
     }
     case "dark_matter": {
-      target.darkMatterStacks = 3;
-      addLog(room, `🫧 DARK MATTER — ${target.name}'s next 3 damaging cards deal 0 damage!`);
-      narration = `${actor.name} surrounds ${target.name} in DARK MATTER! Their next 3 attacks will be completely absorbed!`;
+      // Set on ACTOR (self). When actor later becomes the TARGET of an attack,
+      // dealDamage checks target.darkMatterStacks and absorbs the hit. ✅
+      actor.darkMatterStacks = 3;
+      addLog(room, `🫧 DARK MATTER — ${actor.name} is protected! Next 3 incoming attacks deal 0 damage!`);
+      narration = `${actor.name} wraps themselves in DARK MATTER! The next 3 attacks aimed at them will be completely nullified!`;
       break;
     }
     case "event_horizon": {
-      target.eventHorizonActive = true;
-      addLog(room, `🌑 EVENT HORIZON — ${target.name}'s next attack collapses back on themselves!`);
-      narration = `${actor.name} creates an EVENT HORIZON! The next time ${target.name} attacks, the damage folds back on themselves!`;
+      // Set on ACTOR (self). When actor later becomes the TARGET of an attack,
+      // dealDamage checks target.eventHorizonActive and redirects the hit at the attacker. ✅
+      actor.eventHorizonActive = true;
+      addLog(room, `🌑 EVENT HORIZON — ${actor.name} is ready! Next attack against them collapses back on the attacker!`);
+      narration = `${actor.name} bends space itself! The next attack aimed at them will collapse inward — hitting the attacker instead!`;
       break;
     }
     case "neutron_star": {
-      const d = dealDamage(room, actor, target, 25, "neutron star");
-      if (d > 0) actor.lastCardDmg = d;
+      const d = dealDamage(room, actor, target, 18, "neutron star");
+      actor.lastCardDmg = Math.max(0, d);
       target.neutronStarTicks = 3;
-      addLog(room, `⭐ NEUTRON STAR — ${d > 0 ? d : 0} now + 15/turn for 3 turns!`);
-      narration = `${actor.name} launches a NEUTRON STAR! ${d > 0 ? d : 0} immediate damage + 15 radiation each of ${target.name}'s next 3 turns!`;
+      addLog(room, `⭐ NEUTRON STAR — ${actor.lastCardDmg} now + 12/turn for 3 turns!`);
+      narration = `${actor.name} launches a NEUTRON STAR! ${actor.lastCardDmg} immediate damage + 12 radiation each of ${target.name}'s next 3 turns!`;
       break;
     }
     case "void_pulse": {
@@ -1205,11 +1222,11 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       if (target.healBlocked > 0)       effectCount++;
       const vpDmg = Math.max(10, effectCount * 8);
       const d = dealDamage(room, actor, target, vpDmg, "void pulse");
-      if (d > 0) actor.lastCardDmg = d;
-      addLog(room, `🔵 VOID PULSE — ${effectCount} effect(s) × 8 = ${d > 0 ? d : 0} damage!`);
+      actor.lastCardDmg = Math.max(0, d);
+      addLog(room, `🔵 VOID PULSE — ${effectCount} effect(s) × 8 = ${actor.lastCardDmg} damage!`);
       narration = effectCount >= 3
-        ? `${actor.name} fires a VOID PULSE! ${target.name} had ${effectCount} debuffs — ${d > 0 ? d : 0} CRUSHING damage!`
-        : `${actor.name} fires a Void Pulse for ${d > 0 ? d : 0} damage. Stack more debuffs for maximum pain!`;
+        ? `${actor.name} fires a VOID PULSE! ${target.name} had ${effectCount} debuffs — ${actor.lastCardDmg} CRUSHING damage!`
+        : `${actor.name} fires a Void Pulse for ${actor.lastCardDmg} damage. Stack more debuffs for maximum pain!`;
       break;
     }
   }
@@ -1218,17 +1235,13 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
   if (checkDeath(room, actorToken, targetToken)) { broadcast(room); return; }
   replenishCard(actor);
 
-  // Time warp extra turn logic
+  // ── Time Warp extra turn logic ────────────────────────────────
   if (actor.extraTurn) {
     actor.extraTurn = false;
-    if ((actor as any)._warpTurnsLeft === undefined) (actor as any)._warpTurnsLeft = 0;
-    if (cardId === "time_warp") {
-      (actor as any)._warpTurnsLeft = 2;
-    }
-    if ((actor as any)._warpTurnsLeft > 0) {
-      (actor as any)._warpTurnsLeft--;
-      if ((actor as any)._warpTurnsLeft > 0) actor.extraTurn = true;
-      addLog(room, `⏳ ${actor.name} takes an extra TIME WARP turn!`);
+    if (actor.warpTurnsLeft > 0) {
+      actor.warpTurnsLeft--;
+      if (actor.warpTurnsLeft > 0) actor.extraTurn = true;
+      addLog(room, `⏳ ${actor.name} takes an extra TIME WARP turn! (${actor.warpTurnsLeft} left)`);
       startTurn(room, actorToken);
     } else {
       addLog(room, `⏳ ${actor.name} takes an EXTRA TURN!`);
@@ -1266,6 +1279,7 @@ io.on("connection", socket => {
       manaSurgeActive: false, warCryBonus: 0,
       poisoned: 0, regenStacks: 0, plagueStacks: 0,
       skipTurns: 0, taunted: false, extraTurn: false, extraTurnDebt: 0,
+      warpTurnsLeft: 0,
       stunsSuffered: 0, stunCooldown: 0,
       darkMatterStacks: 0, eventHorizonActive: false, neutronStarTicks: 0,
       healBlocked: 0, overflowDiscard: 0, overflowCount: 0,
@@ -1324,6 +1338,7 @@ io.on("connection", socket => {
           p.manaSurgeActive = false; p.warCryBonus = 0;
           p.poisoned = 0; p.regenStacks = 0; p.plagueStacks = 0;
           p.skipTurns = 0; p.taunted = false; p.extraTurn = false; p.extraTurnDebt = 0;
+          p.warpTurnsLeft = 0;
           p.stunsSuffered = 0; p.stunCooldown = 0;
           p.darkMatterStacks = 0; p.eventHorizonActive = false; p.neutronStarTicks = 0;
           p.healBlocked = 0; p.overflowDiscard = 0; p.overflowCount = 0;
