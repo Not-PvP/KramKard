@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { CARD_DEFS, RARITY_COLORS, RARITY_LABELS, type CardId, type Rarity, type CardDef } from "./cardDefs";
+import { toggleSound, isSoundOn, playTick, playCardPlay, playModalOpen, playModalClose, playVictory, playDefeat, playWhoosh } from "./audio";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface PlayerState {
@@ -56,16 +57,28 @@ function getOrCreateSession(): string {
   return token;
 }
 
-function getRoomId(): string {
+// New: just read room from URL (returns null if not present)
+function getRoomIdFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search);
-  let room = params.get("room");
-  if (!room) {
-    room = Math.random().toString(36).slice(2, 8).toUpperCase();
-    const url = new URL(window.location.href);
-    url.searchParams.set("room", room);
-    window.history.replaceState({}, "", url.toString());
-  }
-  return room;
+  return params.get("room");
+}
+
+// New: generate a fresh 6-char code and set it in the URL
+function createRoomCode(): string {
+  const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+  const url = new URL(window.location.href);
+  url.searchParams.set("room", code);
+  window.history.replaceState({}, "", url.toString());
+  return code;
+}
+
+// New: validate and navigate to an existing room code
+function joinRoomCode(code: string): string {
+  const upper = code.trim().toUpperCase();
+  const url = new URL(window.location.href);
+  url.searchParams.set("room", upper);
+  window.history.replaceState({}, "", url.toString());
+  return upper;
 }
 
 // ─── Starfield ────────────────────────────────────────────────────────────────
@@ -111,6 +124,155 @@ function Starfield() {
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
   }, []);
   return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, width: "100%", height: "100%", zIndex: 0, pointerEvents: "none" }} />;
+}
+
+// ─── Lobby ────────────────────────────────────────────────────────────────────
+
+function Lobby({ onEnter }: { onEnter: (code: string) => void }) {
+  const [joinCode, setJoinCode] = useState("");
+  const [mode, setMode] = useState<"main" | "join">("main");
+  const [error, setError] = useState("");
+
+  function handleCreate() {
+    const code = createRoomCode();
+    onEnter(code);
+  }
+
+  function handleJoin() {
+    const code = joinCode.trim().toUpperCase();
+    if (code.length < 4) { setError("Enter a valid room code."); return; }
+    onEnter(joinRoomCode(code));
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 50,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "'Press Start 2P', monospace",
+    }}>
+      <div style={{
+        background: "#080810",
+        border: "2px solid #f9ca24",
+        padding: "36px 40px",
+        textAlign: "center",
+        minWidth: 320,
+        position: "relative",
+      }}>
+        {/* Corner decorations */}
+        {(["top","bottom"] as const).flatMap(v => (["left","right"] as const).map(h => (
+          <div key={`${v}${h}`} style={{ position: "absolute", [v]: -2, [h]: -2, width: 6, height: 6, background: "#f9ca24", boxShadow: "0 0 5px #f9ca24" }} />
+        )))}
+
+        <div style={{ fontSize: 6, color: "#a55eea", letterSpacing: 4, marginBottom: 8, animation: "blink 2s step-end infinite" }}>★ COSMIC ARENA ★</div>
+        <div style={{ fontSize: 18, color: "#f9ca24", marginBottom: 4, letterSpacing: 3, textShadow: "0 0 8px #f9ca24aa" }}>KRAM KARD</div>
+        <div style={{ fontSize: 5, color: "#333", letterSpacing: 2, marginBottom: 32 }}>▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</div>
+
+        {mode === "main" ? (
+          <>
+            <div style={{ fontSize: 7, color: "#aaa", marginBottom: 24, letterSpacing: 1 }}>CHOOSE YOUR FATE</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <button
+                onClick={handleCreate}
+                style={{
+                  background: "transparent",
+                  border: "2px solid #f9ca24",
+                  color: "#f9ca24",
+                  padding: "12px 24px",
+                  fontSize: 7,
+                  fontFamily: "'Press Start 2P', monospace",
+                  cursor: "pointer",
+                  letterSpacing: 1,
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={e => { (e.target as HTMLButtonElement).style.background = "#f9ca2422"; }}
+                onMouseLeave={e => { (e.target as HTMLButtonElement).style.background = "transparent"; }}
+              >
+                ✦ CREATE ROOM
+              </button>
+              <button
+                onClick={() => { setMode("join"); setError(""); }}
+                style={{
+                  background: "transparent",
+                  border: "2px solid #45aaf2",
+                  color: "#45aaf2",
+                  padding: "12px 24px",
+                  fontSize: 7,
+                  fontFamily: "'Press Start 2P', monospace",
+                  cursor: "pointer",
+                  letterSpacing: 1,
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={e => { (e.target as HTMLButtonElement).style.background = "#45aaf222"; }}
+                onMouseLeave={e => { (e.target as HTMLButtonElement).style.background = "transparent"; }}
+              >
+                ▶ JOIN ROOM
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 7, color: "#45aaf2", marginBottom: 20, letterSpacing: 1 }}>ENTER ROOM CODE</div>
+            <input
+              value={joinCode}
+              onChange={e => { setJoinCode(e.target.value.slice(0, 8)); setError(""); }}
+              onKeyDown={e => e.key === "Enter" && handleJoin()}
+              autoFocus
+              maxLength={8}
+              placeholder="X7K2PQ"
+              style={{
+                background: "#0d0d1a",
+                border: `1px solid ${error ? "#fc5c65" : "#45aaf2"}`,
+                color: "#fff",
+                padding: "10px 14px",
+                fontSize: 12,
+                fontFamily: "'Press Start 2P', monospace",
+                width: 200,
+                outline: "none",
+                marginBottom: 8,
+                display: "block",
+                textTransform: "uppercase",
+                letterSpacing: 3,
+                textAlign: "center",
+              }}
+            />
+            {error && <div style={{ fontSize: 6, color: "#fc5c65", marginBottom: 8 }}>{error}</div>}
+            <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 12 }}>
+              <button
+                onClick={() => { setMode("main"); setJoinCode(""); setError(""); }}
+                style={{
+                  background: "transparent",
+                  border: "1px solid #555",
+                  color: "#555",
+                  padding: "8px 14px",
+                  fontSize: 6,
+                  fontFamily: "'Press Start 2P', monospace",
+                  cursor: "pointer",
+                  letterSpacing: 1,
+                }}
+              >
+                ◀ BACK
+              </button>
+              <button
+                onClick={handleJoin}
+                style={{
+                  background: "transparent",
+                  border: "1px solid #45aaf2",
+                  color: "#45aaf2",
+                  padding: "8px 14px",
+                  fontSize: 6,
+                  fontFamily: "'Press Start 2P', monospace",
+                  cursor: "pointer",
+                  letterSpacing: 1,
+                }}
+              >
+                ENTER ▶
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── HP Bar ───────────────────────────────────────────────────────────────────
@@ -185,7 +347,7 @@ function HandCard({ cardId, index, total, onClick, disabled }: {
   return (
     <div
       onClick={disabled || isHidden ? undefined : onClick}
-      onMouseEnter={() => !disabled && !isHidden && setHovered(true)}
+      onMouseEnter={() => { if (!disabled && !isHidden) { playTick(); setHovered(true); } }}
       onMouseLeave={() => setHovered(false)}
       style={{
         cursor: disabled || isHidden ? "default" : "pointer",
@@ -310,7 +472,6 @@ function NarrationPanel({ text }: { text: string }) {
   const [displayed, setDisplayed] = useState("");
   const [key, setKey] = useState(0);
 
-  // Typewriter effect — re-runs whenever text changes
   useEffect(() => {
     if (!text) return;
     setDisplayed("");
@@ -338,7 +499,6 @@ function NarrationPanel({ text }: { text: string }) {
       fontFamily: "'Press Start 2P', monospace",
       zIndex: 10,
     }}>
-      {/* Header */}
       <div style={{
         padding: "7px 9px",
         borderBottom: "1px solid #1a1a2e",
@@ -353,7 +513,6 @@ function NarrationPanel({ text }: { text: string }) {
         <span style={{ animation: "blink 2s step-end infinite" }}>▐</span> LAST MOVE
       </div>
 
-      {/* Narration text */}
       <div style={{ padding: "12px 10px 14px" }}>
         <div style={{
           fontSize: 7,
@@ -367,7 +526,6 @@ function NarrationPanel({ text }: { text: string }) {
         </div>
       </div>
 
-      {/* Decorative bottom strip */}
       <div style={{ padding: "3px 9px 7px", display: "flex", gap: 3 }}>
         {["#f9ca24","#fc5c65","#26de81","#45aaf2","#a55eea"].map((c, i) => (
           <div key={i} style={{ width: 5, height: 5, background: c, opacity: 0.5 }} />
@@ -406,7 +564,9 @@ export default function App() {
   const countdownInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const sessionToken = useRef(getOrCreateSession());
-  const roomId = useRef(getRoomId());
+
+  // ── CHANGED: roomId is now state (null = show lobby) ─────────────────────
+  const [roomId, setRoomId] = useState<string | null>(getRoomIdFromUrl);
 
   // ── Inactivity helpers ────────────────────────────────────────────────────
 
@@ -460,6 +620,9 @@ export default function App() {
   // ── Socket setup ──────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Don't connect until we have a room
+    if (!roomId) return;
+
     const link = document.createElement("link");
     link.href = "https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap";
     link.rel = "stylesheet";
@@ -473,7 +636,7 @@ export default function App() {
       const name = localStorage.getItem("kramkard_name");
       if (name) {
         socket.emit("joinRoom", {
-          roomId: roomId.current,
+          roomId,
           sessionToken: sessionToken.current,
           preferredName: name,
         });
@@ -483,10 +646,9 @@ export default function App() {
     const storedName = localStorage.getItem("kramkard_name");
     if (!storedName) {
       setShowNameModal(true);
-      socket.connect();
-    } else {
-      socket.connect();
+      playModalOpen();
     }
+    socket.connect();
 
     return () => {
       socket.off("stateUpdate");
@@ -495,12 +657,12 @@ export default function App() {
       socket.off("connect");
       clearInactivityTimers();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function doJoin(name: string) {
     localStorage.setItem("kramkard_name", name);
     socket.emit("joinRoom", {
-      roomId: roomId.current,
+      roomId,
       sessionToken: sessionToken.current,
       preferredName: name,
     });
@@ -508,27 +670,47 @@ export default function App() {
   }
 
   function handleNameSubmit(name: string) {
+    playModalClose();
     setShowNameModal(false);
     doJoin(name);
     socket.emit("setName", name);
   }
 
-  const playCard = (cardId: CardId) => socket.emit("playCard", cardId);
-  const requestRematch = () => socket.emit("rematch");
-  const openLeaderboard = () => { socket.emit("getLeaderboard"); setShowLeaderboard(true); };
+  const [soundEnabled, setSoundEnabled] = useState(false);
 
-const goHome = () => {
-  window.location.href = window.location.origin + window.location.pathname.replace(/\/+$/, "");
-};
-
-const handleLeave = () => {
-  if (isGameOver) { goHome(); return; }
-  if (playerCount < 2) { goHome(); return; }
-  if (window.confirm("Forfeit the match? Your opponent will be declared the winner.")) {
-    socket.emit("forfeit");
-    setTimeout(goHome, 300);
+  function handleSoundToggle() {
+    const next = toggleSound();
+    setSoundEnabled(next);
   }
-};
+  const playCard = (cardId: CardId) => { playCardPlay(); socket.emit("playCard", cardId); };
+  const requestRematch = () => { playWhoosh(); socket.emit("rematch"); };
+  const openLeaderboard = () => { playModalOpen(); socket.emit("getLeaderboard"); setShowLeaderboard(true); };
+
+  const goHome = () => {
+    window.location.href = window.location.origin + window.location.pathname.replace(/\/+$/, "");
+  };
+
+  const handleLeave = () => {
+    if (isGameOver) { goHome(); return; }
+    if (playerCount < 2) { goHome(); return; }
+    if (window.confirm("Forfeit the match? Your opponent will be declared the winner.")) {
+      socket.emit("forfeit");
+      setTimeout(goHome, 300);
+    }
+  };
+
+  // ── LOBBY: show before anything else if no room selected ─────────────────
+  if (!roomId) {
+    return (
+      <>
+        <style>{`@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>
+        <div style={{ background: "#05050f", minHeight: "100vh" }}>
+          <Starfield />
+          <Lobby onEnter={(code) => setRoomId(code)} />
+        </div>
+      </>
+    );
+  }
 
   if (roomFull) {
     return (
@@ -553,6 +735,15 @@ const handleLeave = () => {
   const opponentRematchReady = opponentPlayer?.rematchReady ?? false;
   const lastNarration = gameState?.lastNarration ?? "";
 
+  // Play victory / defeat sound once when game ends
+  const prevGameOver = useRef(false);
+  useEffect(() => {
+    if (isGameOver && !prevGameOver.current) {
+      if (iWon) playVictory(); else playDefeat();
+    }
+    prevGameOver.current = isGameOver;
+  }, [isGameOver, iWon]);
+
   return (
     <div style={{ background: "#05050f", minHeight: "100vh", color: "#e0e0e0", fontFamily: "'Press Start 2P', monospace", overflowX: "hidden", position: "relative" }}>
       <style>{`
@@ -566,18 +757,37 @@ const handleLeave = () => {
       <div style={{ position: "fixed", inset: 0, zIndex: 1, pointerEvents: "none", background: "repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,0.06) 2px,rgba(0,0,0,0.06) 4px)" }} />
 
       {showNameModal && <NameModal onSubmit={handleNameSubmit} />}
-      {showLeaderboard && <LeaderboardPanel entries={leaderboard} myToken={myToken ?? ""} onClose={() => setShowLeaderboard(false)} />}
+      {showLeaderboard && <LeaderboardPanel entries={leaderboard} myToken={myToken ?? ""} onClose={() => { playModalClose(); setShowLeaderboard(false); }} />}
       {showInactivityWarning && (
         <InactivityWarning secondsLeft={warningCountdown} onStayIn={handleStayIn} onLeave={handleInactivityLeave} />
       )}
 
+      {/* ── Sound toggle (fixed top-left) ── */}
+      <button
+        onClick={handleSoundToggle}
+        title={soundEnabled ? "Sound ON" : "Sound OFF"}
+        style={{
+          position: "fixed", top: 14, left: 14, zIndex: 20,
+          background: "transparent",
+          border: `1px solid ${soundEnabled ? "#f9ca24" : "#333"}`,
+          color: soundEnabled ? "#f9ca24" : "#444",
+          padding: "5px 9px", fontSize: 11,
+          fontFamily: "'Press Start 2P', monospace",
+          cursor: "pointer",
+          boxShadow: soundEnabled ? "0 0 6px #f9ca2444" : "none",
+          transition: "all 0.15s",
+        }}
+      >
+        {soundEnabled ? "🔊" : "🔇"}
+      </button>
+
       {/* ── Left narration panel ── */}
       {playerCount === 2 && <NarrationPanel text={lastNarration} />}
 
-      {/* ── Right battle log (bigger) ── */}
+      {/* ── Right battle log ── */}
       <div style={{
         position: "fixed", right: 14, top: 70,
-        width: 240,           // was 190
+        width: 240,
         maxHeight: "75vh",
         background: "#060610",
         border: "2px solid #1a1a2e",
@@ -591,7 +801,7 @@ const handleLeave = () => {
         <ul style={{ listStyle: "none", padding: "7px 9px", margin: 0 }}>
           {(gameState?.log ?? []).map((entry, i) => (
             <li key={i} style={{
-              fontSize: 6,          // was 5
+              fontSize: 6,
               color: i === 0 ? "#f9ca24" : "#555",
               lineHeight: 2,
               borderBottom: "1px solid #0d0d1a",
@@ -623,10 +833,10 @@ const handleLeave = () => {
             ★ LEADERBOARD
           </button>
           <button
-            onClick={() => { window.location.href = window.location.origin; }}
+            onClick={handleLeave}
             style={{ background: "transparent", border: "1px solid #fc5c65", color: "#fc5c65", padding: "5px 14px", fontSize: 6, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}
           >
-            {isGameOver ? "✕ EXIT" : "✕ FORFEIT"}
+            {isGameOver ? "✕ EXIT" : playerCount < 2 ? "✕ LEAVE" : "✕ FORFEIT"}
           </button>
         </div>
 
@@ -680,7 +890,7 @@ const handleLeave = () => {
         {playerCount < 2 && nameSet && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "center", marginTop: 16 }}>
             <div style={{ fontSize: 7, color: "#444", letterSpacing: 2, animation: "blink 1s step-end infinite" }}>▓ WAITING FOR PLAYER 2 ▓</div>
-            <ShareLink roomId={roomId.current} />
+            <ShareLink roomId={roomId} />
           </div>
         )}
 
