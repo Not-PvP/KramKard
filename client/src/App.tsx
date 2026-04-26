@@ -739,6 +739,7 @@ export default function App() {
           sessionToken: sessionToken.current,
           preferredName: name,
         });
+        setNameSet(true); // ← returning player: mark as joined so waiting screen shows
       }
     });
 
