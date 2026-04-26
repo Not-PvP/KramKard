@@ -1,29 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { io, Socket } from "socket.io-client";
+import { CARD_DEFS, RARITY_COLORS, RARITY_LABELS, type CardId, type Rarity, type CardDef } from "./cardDefs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type CardId =
-  | "slash" | "heavy_blow" | "weak_jab" | "heal" | "shield"
-  | "gamble" | "cursed_blade" | "steal" | "divine_shield"
-  | "poison_dart" | "double_strike" | "taunt" | "lucky_shot"
-  | "vampire_bite" | "earthquake" | "mana_burn" | "time_warp"
-  | "berserker" | "ice_spike" | "lightning_storm" | "blood_pact"
-  | "reflect" | "meteor" | "ghost_step" | "regen";
-
-type Rarity = "common" | "uncommon" | "rare" | "cursed" | "legendary";
-
-interface CardDef {
-  id: CardId;
-  name: string;
-  icon: string;
-  description: string;
-  rarity: Rarity;
-  color: string;
-  bgColor: string;
-  glowColor: string;
-}
-
 interface PlayerState {
   id: string;
   sessionToken: string;
@@ -34,9 +13,14 @@ interface PlayerState {
   reflectActive: boolean;
   poisoned: number;
   regenStacks: number;
+  skipTurns: number;
   skipNextTurn: boolean;
   taunted: boolean;
   extraTurn: boolean;
+  counterStanceActive: boolean;
+  manaSurgeActive: boolean;
+  plagueStacks: number;
+  stunsSuffered: number;
   lastCard: CardId | null;
   hand: (CardId | "???")[];
   rematchReady: boolean;
@@ -60,44 +44,6 @@ interface LeaderboardEntry {
   wins: number;
   losses: number;
 }
-
-// ─── Card definitions ────────────────────────────────────────────────────────
-
-const RARITY_COLORS: Record<Rarity, string> = {
-  common:    "#888",
-  uncommon:  "#45aaf2",
-  rare:      "#a55eea",
-  cursed:    "#fc5c65",
-  legendary: "#f9ca24",
-};
-
-const CARD_DEFS: Record<CardId, CardDef> = {
-  slash:           { id: "slash",           name: "SLASH",          icon: "⚔",  rarity: "common",    color: "#ff6b6b", bgColor: "#1a0505", glowColor: "#ff6b6b", description: "Deal 15 damage" },
-  heavy_blow:      { id: "heavy_blow",      name: "HEAVY BLOW",     icon: "💥", rarity: "uncommon",  color: "#ff9f43", bgColor: "#1a0d00", glowColor: "#ff9f43", description: "22 DMG — skip next turn" },
-  weak_jab:        { id: "weak_jab",        name: "WEAK JAB",       icon: "👊", rarity: "common",    color: "#666",    bgColor: "#0d0d0d", glowColor: "#555",    description: "Only 5 DMG... sorry" },
-  heal:            { id: "heal",            name: "MEND WOUNDS",    icon: "♥",  rarity: "uncommon",  color: "#26de81", bgColor: "#001a0a", glowColor: "#26de81", description: "Restore 20 HP" },
-  shield:          { id: "shield",          name: "IRON SHIELD",    icon: "🛡", rarity: "uncommon",  color: "#45aaf2", bgColor: "#001020", glowColor: "#45aaf2", description: "Block next hit" },
-  gamble:          { id: "gamble",          name: "GAMBLE",         icon: "🎲", rarity: "rare",      color: "#f7b731", bgColor: "#1a1200", glowColor: "#f7b731", description: "50/50: 30 DMG or −15 HP" },
-  cursed_blade:    { id: "cursed_blade",    name: "CURSED BLADE",   icon: "🩸", rarity: "cursed",    color: "#fc5c65", bgColor: "#1a0008", glowColor: "#fc5c65", description: "40 DMG — stunned next turn" },
-  steal:           { id: "steal",           name: "MIRROR STRIKE",  icon: "🪞", rarity: "rare",      color: "#a55eea", bgColor: "#100018", glowColor: "#a55eea", description: "Copy opponent's last card" },
-  divine_shield:   { id: "divine_shield",   name: "DIVINE SHIELD",  icon: "✦",  rarity: "rare",      color: "#fed330", bgColor: "#1a1500", glowColor: "#fed330", description: "Block + heal 10 HP" },
-  poison_dart:     { id: "poison_dart",     name: "POISON DART",    icon: "☠",  rarity: "uncommon",  color: "#78e08f", bgColor: "#001500", glowColor: "#78e08f", description: "8 DMG + 6 poison next turn" },
-  double_strike:   { id: "double_strike",   name: "DOUBLE STRIKE",  icon: "⚡", rarity: "rare",      color: "#f9ca24", bgColor: "#1a1500", glowColor: "#f9ca24", description: "Strike twice for 12 each" },
-  taunt:           { id: "taunt",           name: "TAUNT",          icon: "😤", rarity: "uncommon",  color: "#fd9644", bgColor: "#1a0800", glowColor: "#fd9644", description: "Foe skips next card draw" },
-  lucky_shot:      { id: "lucky_shot",      name: "LUCKY SHOT",     icon: "🍀", rarity: "cursed",    color: "#26de81", bgColor: "#001500", glowColor: "#26de81", description: "Random 1–40 DMG. Pure chaos" },
-  vampire_bite:    { id: "vampire_bite",    name: "VAMPIRE BITE",   icon: "🧛", rarity: "rare",      color: "#e056fd", bgColor: "#150010", glowColor: "#e056fd", description: "14 DMG + steal half as HP" },
-  earthquake:      { id: "earthquake",      name: "EARTHQUAKE",     icon: "🌍", rarity: "rare",      color: "#f0932b", bgColor: "#1a0a00", glowColor: "#f0932b", description: "20 to foe + 5 self-damage" },
-  mana_burn:       { id: "mana_burn",       name: "MANA BURN",      icon: "🔥", rarity: "uncommon",  color: "#ff5e57", bgColor: "#1a0200", glowColor: "#ff5e57", description: "Burn foe's card + 8 DMG" },
-  time_warp:       { id: "time_warp",       name: "TIME WARP",      icon: "⏳", rarity: "legendary", color: "#f9ca24", bgColor: "#1a1500", glowColor: "#f9ca24", description: "Take an extra turn!" },
-  berserker:       { id: "berserker",       name: "BERSERKER",      icon: "😡", rarity: "rare",      color: "#fc5c65", bgColor: "#1a0005", glowColor: "#fc5c65", description: "10–40 DMG based on missing HP" },
-  ice_spike:       { id: "ice_spike",       name: "ICE SPIKE",      icon: "🧊", rarity: "uncommon",  color: "#74b9ff", bgColor: "#001015", glowColor: "#74b9ff", description: "12 DMG + stun foe" },
-  lightning_storm: { id: "lightning_storm", name: "LIGHTNING STORM", icon: "⚡", rarity: "legendary", color: "#f9ca24", bgColor: "#1a1400", glowColor: "#f9ca24", description: "3 bolts: 10 DMG each (may backfire)" },
-  blood_pact:      { id: "blood_pact",      name: "BLOOD PACT",     icon: "💀", rarity: "cursed",    color: "#fc5c65", bgColor: "#1a0000", glowColor: "#fc5c65", description: "Pay 15 HP, deal 35 DMG" },
-  reflect:         { id: "reflect",         name: "REFLECT",        icon: "🔮", rarity: "rare",      color: "#a55eea", bgColor: "#0d0018", glowColor: "#a55eea", description: "Bounce next attack back" },
-  meteor:          { id: "meteor",          name: "METEOR",         icon: "☄",  rarity: "legendary", color: "#f9ca24", bgColor: "#1a1000", glowColor: "#f9ca24", description: "50 DMG — stunned after" },
-  ghost_step:      { id: "ghost_step",      name: "GHOST STEP",     icon: "👻", rarity: "rare",      color: "#dfe6e9", bgColor: "#0a0a10", glowColor: "#b2bec3", description: "Shield + 8 counter damage" },
-  regen:           { id: "regen",           name: "REGEN",          icon: "💚", rarity: "uncommon",  color: "#26de81", bgColor: "#001508", glowColor: "#26de81", description: "Heal 9–15 HP over 3 turns" },
-};
 
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
@@ -211,6 +157,10 @@ function BattleCard({ player, isActive, isMine }: { player: PlayerState; isActiv
         {player.taunted && <StatusBadge label="TAUNTED" color="#fd9644" />}
         {player.regenStacks > 0 && <StatusBadge label={`REGEN×${player.regenStacks}`} color="#26de81" />}
         {player.extraTurn && <StatusBadge label="EXTRA TURN" color="#f9ca24" />}
+        {player.counterStanceActive && <StatusBadge label="COUNTER" color="#45aaf2" />}
+        {player.manaSurgeActive && <StatusBadge label="SURGE×2" color="#f9ca24" />}
+        {player.plagueStacks > 0 && <StatusBadge label={`PLAGUE×${player.plagueStacks}`} color="#c44dff" />}
+        {(player.skipTurns ?? 0) > 0 && <StatusBadge label={`FROZEN×${player.skipTurns}`} color="#74b9ff" />}
       </div>
     </div>
   );
@@ -264,7 +214,7 @@ function HandCard({ cardId, index, total, onClick, disabled }: {
             <div style={{ fontSize: 6, color: def.color, letterSpacing: 0.5, lineHeight: 1.6 }}>{def.name}</div>
           </div>
           <div style={{ textAlign: "center", padding: "1px 0" }}>
-            <span style={{ fontSize: 5, color: RARITY_COLORS[def.rarity], letterSpacing: 1 }}>{def.rarity.toUpperCase()}</span>
+            <span style={{ fontSize: 5, color: RARITY_COLORS[def.rarity], letterSpacing: 1 }}>{RARITY_LABELS[def.rarity]}</span>
           </div>
           <div style={{ padding: "4px 6px 8px", textAlign: "center" }}>
             <div style={{ fontSize: 5, color: "#777", lineHeight: 1.8 }}>{def.description}</div>
@@ -749,7 +699,7 @@ const handleLeave = () => {
                   {myRematchReady ? "READY ✓" : "REMATCH?"}
                 </button>
                 <button
-                  onClick={() => { window.location.href = window.location.pathname; }}
+                  onClick={() => { window.location.href = window.location.origin; }}
                   style={{ background: "transparent", border: "1px solid #fc5c65", color: "#fc5c65", padding: "8px 18px", fontSize: 7, fontFamily: "'Press Start 2P', monospace", cursor: "pointer", letterSpacing: 1 }}
                 >
                   ✕ LEAVE
