@@ -63,8 +63,10 @@ export type CardId =
   | "hand_swap" | "overflow" | "time_warp"
   | "shockwave" | "curse_tax"
   | "cursed_mirror" | "void_pulse"
-  // ✦ NEW
-  | "war_cry" | "chain_stun" | "soul_drain" | "echo_strike";
+  // Previous new cards
+  | "war_cry" | "chain_stun" | "soul_drain" | "echo_strike"
+  // ✦ NEW HEALING CARDS
+  | "sacred_spring" | "blood_transfusion" | "celestial_mend" | "phoenix_ember";
 
 export type Rarity = "common" | "uncommon" | "rare" | "cursed" | "corrupted" | "legendary" | "mythic" | "void";
 
@@ -89,6 +91,8 @@ export const CARD_NAMES: Record<CardId, string> = {
   singularity: "Singularity", dark_matter: "Dark Matter", event_horizon: "Event Horizon",
   neutron_star: "Neutron Star", void_pulse: "Void Pulse",
   shockwave: "Shockwave",
+  sacred_spring: "Sacred Spring", blood_transfusion: "Blood Transfusion",
+  celestial_mend: "Celestial Mend", phoenix_ember: "Phoenix Ember",
 };
 
 // Rarity ordering for curse_tax heal scaling
@@ -102,14 +106,15 @@ const CARD_RARITIES: Record<CardId, string> = {
   gamble: "rare", steal: "rare", divine_shield: "rare", double_strike: "rare",
   vampire_bite: "rare", earthquake: "rare", berserker: "rare", ghost_step: "rare",
   reflect: "rare", lucky_shot: "rare", counter_stance: "rare", mana_surge: "rare",
-  pickpocket: "rare", explosion: "rare", shockwave: "rare", chain_stun: "rare",
+  pickpocket: "rare", explosion: "rare", shockwave: "rare", chain_stun: "rare", sacred_spring: "rare",
   cursed_blade: "cursed", blood_pact: "cursed", soul_drain: "cursed",
   cursed_heal: "corrupted", betrayal: "corrupted", plague: "corrupted", sacrifice: "corrupted",
-  hand_swap: "corrupted", cursed_mirror: "corrupted", curse_tax: "corrupted",
+  hand_swap: "corrupted", cursed_mirror: "corrupted", curse_tax: "corrupted", blood_transfusion: "corrupted",
   freeze: "legendary", divine_retribution: "legendary", titans_wrath: "legendary",
   last_stand: "legendary", lightning_storm: "legendary", meteor: "legendary",
-  overflow: "legendary", echo_strike: "legendary",
-  soul_swap: "mythic", armageddon: "mythic", void_rift: "mythic", judgement: "mythic", time_warp: "mythic",
+  overflow: "legendary", echo_strike: "legendary", celestial_mend: "legendary",
+  soul_swap: "mythic", armageddon: "mythic", void_rift: "mythic", judgement: "mythic",
+  time_warp: "mythic", phoenix_ember: "mythic",
   singularity: "void", dark_matter: "void", event_horizon: "void", neutron_star: "void", void_pulse: "void",
 };
 
@@ -146,6 +151,7 @@ const DRAW_POOL: CardId[] = [
   "explosion",
   "shockwave",
   "chain_stun",
+  "sacred_spring",
   // Cursed
   "cursed_blade",
   "blood_pact",
@@ -158,6 +164,7 @@ const DRAW_POOL: CardId[] = [
   "hand_swap",
   "cursed_mirror",
   "curse_tax",
+  "blood_transfusion",
   // Legendary
   "freeze",
   "divine_retribution",
@@ -167,12 +174,14 @@ const DRAW_POOL: CardId[] = [
   "meteor",
   "overflow",
   "echo_strike",
+  "celestial_mend",
   // Mythic
   "soul_swap",
   "armageddon",
   "void_rift",
   "judgement",
   "time_warp",
+  "phoenix_ember",
   // Void
   "singularity",
   "dark_matter",
@@ -203,7 +212,7 @@ interface Player {
   reflectActive: boolean;
   counterStanceActive: boolean;
   manaSurgeActive: boolean;
-  warCryBonus: number;        // flat DMG bonus from War Cry
+  warCryBonus: number;
   poisoned: number;
   regenStacks: number;
   plagueStacks: number;
@@ -220,7 +229,7 @@ interface Player {
   overflowDiscard: number;
   overflowCount: number;
   lastCard: CardId | null;
-  lastCardDmg: number;        // raw DMG of last card for echo_strike
+  lastCardDmg: number;
   hand: CardId[];
   rematchReady: boolean;
   connected: boolean;
@@ -293,10 +302,6 @@ function replenishCard(player: Player) {
   player.hand.push(drawOne(player.hand as CardId[]));
 }
 
-/**
- * Core damage function.
- * Returns: actual DMG dealt (>0), 0 if absorbed/blocked, -1 if reflected/countered, -2 if event horizon self-hit.
- */
 function dealDamage(
   room: Room,
   actor: Player,
@@ -305,7 +310,6 @@ function dealDamage(
   source: string,
   bypassShield = false
 ): number {
-  // Event Horizon — damage turns back on the attacker
   if (target.eventHorizonActive) {
     target.eventHorizonActive = false;
     actor.hp = Math.max(0, actor.hp - dmg);
@@ -313,14 +317,12 @@ function dealDamage(
     return -2;
   }
 
-  // Dark Matter — absorbs damage
   if (target.darkMatterStacks > 0) {
     target.darkMatterStacks--;
     addLog(room, `🫧 DARK MATTER absorbs ${source}! (${target.darkMatterStacks} stack(s) left)`);
     return 0;
   }
 
-  // Counter Stance — reflects + bonus
   if (target.counterStanceActive && !bypassShield) {
     target.counterStanceActive = false;
     actor.hp = Math.max(0, actor.hp - dmg);
@@ -329,14 +331,12 @@ function dealDamage(
     return -1;
   }
 
-  // Shield
   if (target.shield && !bypassShield) {
     target.shield = false;
     addLog(room, `🛡 ${target.name}'s shield absorbed ${source}!`);
     return 0;
   }
 
-  // Reflect
   if (target.reflectActive && !bypassShield) {
     target.reflectActive = false;
     actor.hp = Math.max(0, actor.hp - dmg);
@@ -344,7 +344,6 @@ function dealDamage(
     return -1;
   }
 
-  // Mana Surge — double + flat bonus
   let finalDmg = dmg;
   if (actor.manaSurgeActive) {
     actor.manaSurgeActive = false;
@@ -352,7 +351,6 @@ function dealDamage(
     addLog(room, `✨ MANA SURGE: ${dmg} → ${finalDmg} damage!`);
   }
 
-  // War Cry bonus
   if (actor.warCryBonus > 0) {
     finalDmg += actor.warCryBonus;
     addLog(room, `📯 WAR CRY adds ${actor.warCryBonus} bonus damage!`);
@@ -383,12 +381,6 @@ function applyStun(room: Room, actor: Player, target: Player, turns: number): bo
   return true;
 }
 
-/**
- * ── DRAW CONDITION FIX ────────────────────────────────────────────
- * If BOTH players are at 0 HP simultaneously it's a draw.
- * If only one is at 0, the other wins.
- * Returns true if the game ended.
- */
 function checkDeath(room: Room, actorToken: string, targetToken: string): boolean {
   const actor  = room.players[actorToken];
   const target = room.players[targetToken];
@@ -397,7 +389,6 @@ function checkDeath(room: Room, actorToken: string, targetToken: string): boolea
   const targetDead = target && target.hp <= 0;
 
   if (actorDead && targetDead) {
-    // DRAW
     room.gameOver = true;
     room.winnerId = null;
     room.isDraw   = true;
@@ -585,7 +576,6 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     }
     case "shield": {
       if (actor.shield) {
-        // Already shielded — heal instead
         const healed = applyHeal(room, actor, 10);
         addLog(room, `🛡 ${actor.name} already shielded — converted to ${healed} HP heal!`);
         narration = `${actor.name} raises a second shield... but they're already protected! Converts to ${healed} HP instead.`;
@@ -830,7 +820,6 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
     case "chain_stun": {
       const isStunned = target.skipTurns > 0;
       if (isStunned) {
-        // Extend stun + massive damage
         target.skipTurns += 1;
         const d = dealDamage(room, actor, target, 25, "chain stun");
         if (d > 0) actor.lastCardDmg = d;
@@ -842,6 +831,13 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
         addLog(room, `⛓ Chain Stun — ${d > 0 ? d : 0} DMG (no stun active, use when foe is stunned!)`);
         narration = `${actor.name} swings the chain for ${d > 0 ? d : 0} damage. Combo with a stun first for full power!`;
       }
+      break;
+    }
+    case "sacred_spring": {
+      const healed = applyHeal(room, actor, 30);
+      actor.regenStacks = Math.min(actor.regenStacks + 2, 6);
+      addLog(room, `🌿 SACRED SPRING — healed ${healed} HP + 2 regen stacks!`);
+      narration = `${actor.name} bathes in the Sacred Spring! Restored ${healed} HP and gained 2 regen stacks for ${actor.regenStacks * 10} HP/turn!`;
       break;
     }
 
@@ -961,6 +957,15 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       }
       break;
     }
+    case "blood_transfusion": {
+      // Steal 35 HP from foe — they lose it, you gain it. Both capped at 0/maxHp.
+      const steal = Math.min(35, target.hp); // can't steal more than they have
+      target.hp = Math.max(0, target.hp - steal);
+      const healed = applyHeal(room, actor, steal);
+      addLog(room, `🩺 BLOOD TRANSFUSION — stole ${steal} HP from ${target.name}! Gained ${healed} HP.`);
+      narration = `${actor.name} performs a dark BLOOD TRANSFUSION! Rips ${steal} HP from ${target.name}'s veins and absorbs ${healed} HP!`;
+      break;
+    }
 
     // ── LEGENDARY ───────────────────────────────────────────────
     case "freeze": {
@@ -972,12 +977,11 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       break;
     }
     case "divine_retribution": {
-      // REWORKED: Two strikes of 25 each. Second strike stuns.
       let total = 0;
       const d1 = dealDamage(room, actor, target, 25, "first smite");
       if (d1 > 0) total += d1;
       addLog(room, `⚖ DIVINE RETRIBUTION — First smite: ${d1 > 0 ? d1 : "blocked"}!`);
-      if (d1 >= 0) { // proceed to second strike unless reflected (−1) or event horizon (−2)
+      if (d1 >= 0) {
         const d2 = dealDamage(room, actor, target, 25, "second smite");
         if (d2 > 0) {
           total += d2;
@@ -1037,7 +1041,6 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       break;
     }
     case "meteor": {
-      // Bypasses shields
       const d = dealDamage(room, actor, target, 60, "meteor", true);
       actor.hp = Math.max(0, actor.hp - 25);
       if (d > 0) {
@@ -1066,8 +1069,23 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
         const d = dealDamage(room, actor, target, echoDmg, "echo strike");
         addLog(room, `🔁 ECHO STRIKE — echoes ${CARD_NAMES[actor.lastCard]} for ${d > 0 ? d : 0} damage!`);
         narration = `${actor.name} channels an ECHO STRIKE! Replays the raw power of ${CARD_NAMES[actor.lastCard]} for ${d > 0 ? d : 0} damage!`;
-        // Note: don't update lastCardDmg so it can't chain infinitely
       }
+      break;
+    }
+    case "celestial_mend": {
+      // Heal 60 HP + cleanse ALL debuffs
+      const cleansed: string[] = [];
+      if (actor.poisoned > 0)       { actor.poisoned = 0;       cleansed.push("Poison"); }
+      if (actor.plagueStacks > 0)   { actor.plagueStacks = 0;   cleansed.push("Plague"); }
+      if (actor.healBlocked > 0)    { actor.healBlocked = 0;    cleansed.push("Heal Block"); }
+      if (actor.skipTurns > 0)      { actor.skipTurns = 0;      cleansed.push("Stun"); }
+      if (actor.neutronStarTicks > 0) { actor.neutronStarTicks = 0; cleansed.push("Neutron Star"); }
+      const healed = applyHeal(room, actor, 60);
+      const cleanseMsg = cleansed.length > 0 ? ` Cleansed: ${cleansed.join(", ")}!` : " No debuffs to cleanse.";
+      addLog(room, `✨ CELESTIAL MEND — +${healed} HP!${cleanseMsg}`);
+      narration = cleansed.length > 0
+        ? `${actor.name} calls upon celestial power! Healed ${healed} HP and purged ${cleansed.join(", ")} from their body!`
+        : `${actor.name} is bathed in celestial light — healed ${healed} HP! No debuffs to cleanse, but fully restored.`;
       break;
     }
 
@@ -1082,7 +1100,6 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       break;
     }
     case "armageddon": {
-      // Bypasses ALL defences
       const prevActorShield  = actor.shield;  actor.shield  = false;
       const prevTargetShield = target.shield; target.shield = false;
       actor.hp  = Math.max(0, actor.hp  - 50);
@@ -1120,6 +1137,26 @@ function resolveCard(room: Room, actorToken: string, cardId: CardId) {
       actor.extraTurnDebt = 2;
       addLog(room, `⏳ TIME WARP — ${actor.name} gets 2 extra turns! Debt: skip 2 turns later.`);
       narration = `${actor.name} warps time itself! Taking 2 extra turns NOW... but will owe 2 skipped turns afterward!`;
+      break;
+    }
+    case "phoenix_ember": {
+      if (actor.hp <= 20) {
+        // Rising from the ashes — ignore heal block for this mythic resurrection
+        const oldHp = actor.hp;
+        actor.hp = Math.min(actor.maxHp, 60);
+        actor.shield = true;
+        // Also cleanse debuffs on resurrection
+        actor.poisoned = 0;
+        actor.plagueStacks = 0;
+        actor.healBlocked = 0;
+        actor.skipTurns = 0;
+        addLog(room, `🔥 PHOENIX EMBER — risen from ${oldHp} HP to 60! Shield raised! Debuffs purged!`);
+        narration = `${actor.name} was nearly dead at ${oldHp} HP... but the PHOENIX RISES! Restored to 60 HP with a shield, all debuffs burned away!`;
+      } else {
+        const healed = applyHeal(room, actor, 20);
+        addLog(room, `🔥 Phoenix Ember — healed ${healed} HP (HP was > 20, no resurrection).`);
+        narration = `${actor.name} uses Phoenix Ember... but they're too healthy for the resurrection. Just ${healed} HP restored. Save it for the brink!`;
+      }
       break;
     }
 

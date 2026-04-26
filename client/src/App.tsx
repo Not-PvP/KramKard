@@ -173,7 +173,6 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
     ? allCardIds
     : allCardIds.filter(id => CARD_DEFS[id].rarity === rarityFilter);
 
-  // Button style helpers
   const tabColors: Record<string, string> = { play: "#f9ca24", scores: "#a55eea", cards: "#45aaf2" };
   const tabLabels: Record<string, string> = { play: "⚔  PLAY", scores: "★  SCORES", cards: "📖  CARDS" };
 
@@ -338,7 +337,6 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
               <div style={{ textAlign: "center", fontSize: isMobile ? 8 : 9, color: "#333", padding: "36px 0", animation: "blink 1s step-end infinite" }}>▓ LOADING... ▓</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                {/* Header row */}
                 <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 56px 56px 64px", padding: "8px 10px", borderBottom: "1px solid #2a2a3e", marginBottom: 4, gap: 0 }}>
                   <span style={{ fontSize: isMobile ? 7 : 8, color: "#333", letterSpacing: 1 }}>#</span>
                   <span style={{ fontSize: isMobile ? 7 : 8, color: "#333", letterSpacing: 1 }}>NAME</span>
@@ -369,22 +367,35 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
 
         {/* ── CARDS TAB ── */}
         {tab === "cards" && (
-          <div style={{ padding: isMobile ? "14px 10px 22px" : "20px 24px 28px", maxHeight: isMobile ? "85vh" : "74vh", overflowY: "auto" }}>
+          // ↓ FIX: The whole cards tab is a flex column. Grid scrolls independently.
+          //   The selected-card detail panel lives BELOW the grid, never inside the scroll area.
+          <div style={{ display: "flex", flexDirection: "column", padding: isMobile ? "14px 10px 22px" : "20px 24px 28px" }}>
             <div style={{ fontSize: isMobile ? 9 : 10, color: "#45aaf2", letterSpacing: 4, marginBottom: 14, textAlign: "center" }}>— CARD COMPENDIUM —</div>
+
             {/* Rarity filter pills */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "center", marginBottom: 16 }}>
               {(["all", ...RARITY_ORDER] as const).map(r => {
                 const color = r === "all" ? "#888" : RARITY_COLORS[r as Rarity];
                 const active = rarityFilter === r;
                 return (
-                  <button key={r} onClick={() => setRarityFilter(r)} style={{ background: active ? `${color}22` : "transparent", border: `1px solid ${active ? color : color + "44"}`, color: active ? color : color + "88", padding: isMobile ? "5px 8px" : "6px 12px", fontSize: isMobile ? 7 : 8, fontFamily: "'Press Start 2P',monospace", cursor: "pointer", letterSpacing: 0.5, transition: "all 0.12s" }}>
+                  <button key={r} onClick={() => { setRarityFilter(r); setSelectedCard(null); }} style={{ background: active ? `${color}22` : "transparent", border: `1px solid ${active ? color : color + "44"}`, color: active ? color : color + "88", padding: isMobile ? "5px 8px" : "6px 12px", fontSize: isMobile ? 7 : 8, fontFamily: "'Press Start 2P',monospace", cursor: "pointer", letterSpacing: 0.5, transition: "all 0.12s" }}>
                     {r === "all" ? "ALL" : RARITY_LABELS[r as Rarity]}
                   </button>
                 );
               })}
             </div>
-            {/* Card grid */}
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(3,1fr)", gap: isMobile ? 8 : 12, maxHeight: isMobile ? "36vh" : "40vh", overflowY: "auto", paddingRight: 4 }}>
+
+            {/* Card grid — fixed height, scrolls on its own */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(3,1fr)",
+              gap: isMobile ? 8 : 12,
+              overflowY: "auto",
+              // Fixed height so the detail panel below is always reachable
+              maxHeight: isMobile ? "38vh" : "44vh",
+              paddingRight: 4,
+              paddingBottom: 4,
+            }}>
               {filteredCards.map(id => {
                 const def = CARD_DEFS[id];
                 const isSelected = selectedCard === id;
@@ -397,29 +408,33 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
                 );
               })}
             </div>
-            {/* Selected card detail */}
-            {selectedCard && CARD_DEFS[selectedCard] && (
-              <div style={{ marginTop: 14, background: "#050510", border: `2px solid ${CARD_DEFS[selectedCard].color}`, padding: isMobile ? "14px" : "18px", position: "relative", maxHeight: isMobile ? "28vh" : "auto", overflowY: isMobile ? "auto" : "visible" }}>
-                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: RARITY_COLORS[CARD_DEFS[selectedCard].rarity], boxShadow: `0 0 8px ${RARITY_COLORS[CARD_DEFS[selectedCard].rarity]}` }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
-                  <span style={{ fontSize: isMobile ? 28 : 34, filter: `drop-shadow(0 0 8px ${CARD_DEFS[selectedCard].glowColor})` }}>{CARD_DEFS[selectedCard].icon}</span>
-                  <div>
-                    <div style={{ fontSize: isMobile ? 9 : 10, color: CARD_DEFS[selectedCard].color, letterSpacing: 1, marginBottom: 6 }}>{CARD_DEFS[selectedCard].name}</div>
-                    <span style={{ fontSize: isMobile ? 8 : 9, color: RARITY_COLORS[CARD_DEFS[selectedCard].rarity], border: `1px solid ${RARITY_COLORS[CARD_DEFS[selectedCard].rarity]}44`, padding: "3px 8px" }}>
-                      {RARITY_LABELS[CARD_DEFS[selectedCard].rarity]}
-                    </span>
+
+            {/* Selected card detail — OUTSIDE the scroll area so it's always fully visible */}
+            {selectedCard && CARD_DEFS[selectedCard] && (() => {
+              const def = CARD_DEFS[selectedCard];
+              return (
+                <div style={{ marginTop: 14, background: "#050510", border: `2px solid ${def.color}`, padding: isMobile ? "14px" : "18px", position: "relative", flexShrink: 0 }}>
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: RARITY_COLORS[def.rarity], boxShadow: `0 0 8px ${RARITY_COLORS[def.rarity]}` }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+                    <span style={{ fontSize: isMobile ? 28 : 34, filter: `drop-shadow(0 0 8px ${def.glowColor})`, flexShrink: 0 }}>{def.icon}</span>
+                    <div>
+                      <div style={{ fontSize: isMobile ? 9 : 10, color: def.color, letterSpacing: 1, marginBottom: 6 }}>{def.name}</div>
+                      <span style={{ fontSize: isMobile ? 8 : 9, color: RARITY_COLORS[def.rarity], border: `1px solid ${RARITY_COLORS[def.rarity]}44`, padding: "3px 8px" }}>
+                        {RARITY_LABELS[def.rarity]}
+                      </span>
+                    </div>
                   </div>
+                  <div style={{ fontSize: isMobile ? 8 : 9, color: "#ccc", lineHeight: 2.4, letterSpacing: 0.3 }}>{def.description}</div>
+                  <button onClick={() => setSelectedCard(null)} style={{ position: "absolute", top: 10, right: 10, background: "transparent", border: "none", color: "#555", fontSize: 12, cursor: "pointer", fontFamily: "'Press Start 2P',monospace" }}>✕</button>
                 </div>
-                <div style={{ fontSize: isMobile ? 8 : 9, color: "#ccc", lineHeight: 2.4, letterSpacing: 0.3 }}>{CARD_DEFS[selectedCard].description}</div>
-                <button onClick={() => setSelectedCard(null)} style={{ position: "absolute", top: 10, right: 10, background: "transparent", border: "none", color: "#555", fontSize: 12, cursor: "pointer", fontFamily: "'Press Start 2P',monospace" }}>✕</button>
-              </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
         <div style={{ height: 2, background: "linear-gradient(90deg,transparent,#45aaf233,#a55eea33,#f9ca2433,transparent)" }} />
       </div>
-      <div style={{ marginTop: 14, fontSize: isMobile ? 7 : 8, color: "#1e1e2e", letterSpacing: 2, zIndex: 2 }}>★ KRAM KARD v1.5 ★</div>
+      <div style={{ marginTop: 14, fontSize: isMobile ? 7 : 8, color: "#1e1e2e", letterSpacing: 2, zIndex: 2 }}>★ KRAM KARD v1.6 ★</div>
     </div>
   );
 }
@@ -561,7 +576,6 @@ function LeaderboardPanel({ entries, myToken, onClose }: { entries: LeaderboardE
       <div style={{ background: "#080810", border: "2px solid #f9ca24", padding: "24px 28px", minWidth: 320, maxWidth: "90vw", maxHeight: "80vh", overflowY: "auto", fontFamily: "'Press Start 2P',monospace", position: "relative" }}>
         <div style={{ fontSize: 11, color: "#f9ca24", letterSpacing: 2, marginBottom: 18, textAlign: "center" }}>★ LEADERBOARD ★</div>
         {entries.length === 0 && <div style={{ fontSize: 8, color: "#555", textAlign: "center" }}>No records yet.</div>}
-        {/* Header */}
         <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 56px 56px 64px", padding: "6px 8px", borderBottom: "1px solid #2a2a3e", marginBottom: 4, gap: 0 }}>
           <span style={{ fontSize: 8, color: "#444" }}>#</span>
           <span style={{ fontSize: 8, color: "#444" }}>NAME</span>
@@ -883,7 +897,6 @@ export default function App() {
     );
   }
 
-  // ─── Game screen ─────────────────────────────────────────────────
   return (
     <div style={{ background: "#05050f", minHeight: "100vh", color: "#e0e0e0", fontFamily: "'Press Start 2P',monospace", overflowX: "hidden", position: "relative", paddingBottom: isMobile ? 60 : 0 }}>
       <style>{`
@@ -993,7 +1006,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── GAME OVER SCREEN ── */}
         {isGameOver && (
           <div style={{ textAlign: "center", marginTop: 16, animation: "slideUp 0.4s ease", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
             {isDraw ? (
