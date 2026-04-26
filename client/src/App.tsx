@@ -803,6 +803,7 @@ export default function App() {
     return (
       <div style={{ background: "#05050f", minHeight: "100vh", position: "fixed", inset: 0, overflow: "hidden" }}>
         <style>{`
+          html, body, #root { background: #05050f !important; min-height: 100vh; margin: 0; padding: 0; }
           @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
           * { box-sizing: border-box; }
         `}</style>
@@ -847,6 +848,7 @@ export default function App() {
   return (
     <div style={{ background: "#05050f", minHeight: "100vh", color: "#e0e0e0", fontFamily: "'Press Start 2P', monospace", overflowX: "hidden", position: "relative" }}>
       <style>{`
+        html, body, #root { background: #05050f !important; min-height: 100vh; margin: 0; padding: 0; }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
         @keyframes slideUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         @keyframes pulse { 0%,100%{color:#f9ca24;text-shadow:0 0 8px #f9ca24} 50%{color:#fff;text-shadow:0 0 20px #f9ca24} }
