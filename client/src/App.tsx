@@ -134,13 +134,27 @@ function Starfield() {
 }
 
 // ─── Lobby ────────────────────────────────────────────────────────────────────
-function Lobby({ onEnter }: { onEnter: (code: string) => void }) {
+const RARITY_ORDER = ["common","uncommon","rare","cursed","corrupted","legendary","mythic","void"] as const;
+
+function Lobby({
+  onEnter,
+  leaderboard,
+  fetchLeaderboard,
+}: {
+  onEnter: (code: string) => void;
+  leaderboard: LeaderboardEntry[];
+  fetchLeaderboard: () => void;
+}) {
   const [joinCode, setJoinCode] = useState("");
   const [mode, setMode] = useState<"main" | "join" | "created">("main");
   const [error, setError] = useState("");
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
   const [createdCode, setCreatedCode] = useState("");
   const [copied, setCopied] = useState(false);
+  const [tab, setTab] = useState<"play" | "scores" | "cards">("play"); 
+  const [rarityFilter, setRarityFilter] = useState<string>("all");       
+  const [selectedCard, setSelectedCard] = useState<CardId | null>(null); 
+  const isMobile = useIsMobile();                                        
 
   function handleCreate() { const code = createRoomCode(); setCreatedCode(code); setMode("created"); }
   function handleJoin() {
@@ -159,68 +173,241 @@ function Lobby({ onEnter }: { onEnter: (code: string) => void }) {
     background: "#f9ca24", boxShadow: "0 0 8px #f9ca24, 0 0 16px #f9ca2466",
   });
 
+// ─── RARITY order for compendium ─────────────────────────────────
+const RARITY_ORDER = ["common","uncommon","rare","cursed","corrupted","legendary","mythic","void"] as const;
+
+// ─── Lobby ────────────────────────────────────────────────────────────────────
+function Lobby({
+  onEnter,
+  leaderboard,
+  fetchLeaderboard,
+}: {
+  onEnter: (code: string) => void;
+  leaderboard: LeaderboardEntry[];
+  fetchLeaderboard: () => void;
+}) {
+  const [joinCode, setJoinCode] = useState("");
+  const [mode, setMode] = useState<"main" | "join" | "created">("main");
+  const [error, setError] = useState("");
+  const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
+  const [createdCode, setCreatedCode] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [tab, setTab] = useState<"play" | "scores" | "cards">("play");
+  const [rarityFilter, setRarityFilter] = useState<string>("all");
+  const [selectedCard, setSelectedCard] = useState<CardId | null>(null);
+  const isMobile = useIsMobile();
+
+  // Fetch leaderboard when scores tab is opened
+  const prevTab = useRef<string>("play");
+  useEffect(() => {
+    if (tab === "scores" && prevTab.current !== "scores") fetchLeaderboard();
+    prevTab.current = tab;
+  }, [tab]); // eslint-disable-line
+
+  function handleCreate() { const code = createRoomCode(); setCreatedCode(code); setMode("created"); }
+  function handleJoin() {
+    const code = joinCode.trim().toUpperCase();
+    if (code.length < 4) { setError("INVALID CODE"); return; }
+    onEnter(joinRoomCode(code));
+  }
+  function handleCopyCode() {
+    const url = `${window.location.origin}${window.location.pathname}?room=${createdCode}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const cornerStyle = (v: string, h: string): React.CSSProperties => ({
+    position: "absolute", [v]: -3, [h]: -3, width: 10, height: 10,
+    background: "#f9ca24", boxShadow: "0 0 8px #f9ca24, 0 0 16px #f9ca2466",
+  });
+
+  // Filtered cards for compendium
+  const allCardIds = Object.keys(CARD_DEFS) as CardId[];
+  const filteredCards = rarityFilter === "all"
+    ? allCardIds
+    : allCardIds.filter(id => CARD_DEFS[id].rarity === rarityFilter);
+
+  const selectedDef = selectedCard ? CARD_DEFS[selectedCard] : null;
+
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Press Start 2P', monospace", padding: 20 }}>
-      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 1, background: "repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,0.07) 2px,rgba(0,0,0,0.07) 4px)" }} />
-      <div style={{ position: "relative", zIndex: 2, background: "linear-gradient(160deg, #07070f 0%, #0b0b18 60%, #080812 100%)", border: "2px solid #f9ca24", width: "100%", maxWidth: 440, boxShadow: "0 0 0 1px #f9ca2422, 0 0 40px #f9ca2418, inset 0 0 60px #00000066", overflow: "hidden" }}>
+    <div style={{ position:"fixed", inset:0, zIndex:50, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", fontFamily:"'Press Start 2P', monospace", padding: isMobile ? 10 : 20, overflowY:"auto" }}>
+      <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:1, background:"repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,0.07) 2px,rgba(0,0,0,0.07) 4px)" }} />
+
+      <div style={{ position:"relative", zIndex:2, background:"linear-gradient(160deg,#07070f 0%,#0b0b18 60%,#080812 100%)", border:"2px solid #f9ca24", width:"100%", maxWidth: isMobile ? "100%" : 500, boxShadow:"0 0 0 1px #f9ca2422,0 0 40px #f9ca2418,inset 0 0 60px #00000066", overflow:"hidden", marginTop: isMobile ? 40 : 0 }}>
         <div style={cornerStyle("top","left")} /><div style={cornerStyle("top","right")} />
         <div style={cornerStyle("bottom","left")} /><div style={cornerStyle("bottom","right")} />
-        <div style={{ height: 3, background: "linear-gradient(90deg, transparent, #f9ca24, #a55eea, #45aaf2, transparent)" }} />
-        <div style={{ textAlign: "center", padding: "32px 40px 24px" }}>
-          <div style={{ fontSize: 6, color: "#a55eea", letterSpacing: 5, marginBottom: 10, animation: "blink 2s step-end infinite" }}>★ COSMIC ARENA ★</div>
-          <div style={{ fontSize: 28, color: "#f9ca24", letterSpacing: 6, textShadow: "0 0 12px #f9ca24aa, 0 0 30px #f9ca2444", marginBottom: 6 }}>KRAM KARD</div>
-          <div style={{ display: "flex", justifyContent: "center", gap: 3, marginBottom: 4 }}>
-            {["#f9ca24","#fc5c65","#26de81","#45aaf2","#a55eea","#45aaf2","#26de81","#fc5c65","#f9ca24"].map((c,i) => (
-              <div key={i} style={{ width: 4, height: 4, background: c, opacity: 0.6 }} />
+        <div style={{ height:3, background:"linear-gradient(90deg,transparent,#f9ca24,#a55eea,#45aaf2,transparent)" }} />
+
+        {/* Header */}
+        <div style={{ textAlign:"center", padding: isMobile ? "20px 20px 14px" : "28px 40px 18px" }}>
+          <div style={{ fontSize:6, color:"#a55eea", letterSpacing:5, marginBottom:8, animation:"blink 2s step-end infinite" }}>★ COSMIC ARENA ★</div>
+          <div style={{ fontSize: isMobile ? 22 : 28, color:"#f9ca24", letterSpacing:6, textShadow:"0 0 12px #f9ca24aa,0 0 30px #f9ca2444", marginBottom:6 }}>KRAM KARD</div>
+          <div style={{ display:"flex", justifyContent:"center", gap:3, marginBottom:4 }}>
+            {["#f9ca24","#fc5c65","#26de81","#45aaf2","#a55eea","#45aaf2","#26de81","#fc5c65","#f9ca24"].map((c,i)=>(
+              <div key={i} style={{ width:4, height:4, background:c, opacity:0.6 }}/>
             ))}
           </div>
         </div>
-        <div style={{ height: 1, background: "linear-gradient(90deg, transparent, #1e1e3a, #f9ca2433, #1e1e3a, transparent)", margin: "0 24px" }} />
-        <div style={{ padding: "28px 40px 36px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-          {mode === "main" && (<>
-            <div style={{ fontSize: 6, color: "#444", letterSpacing: 3, marginBottom: 24 }}>— SELECT MODE —</div>
-            <button onClick={handleCreate} onMouseEnter={() => setHoveredBtn("create")} onMouseLeave={() => setHoveredBtn(null)}
-              style={{ width: "100%", background: hoveredBtn==="create"?"linear-gradient(135deg,#f9ca2418,#f9ca2408)":"transparent", border:`2px solid ${hoveredBtn==="create"?"#f9ca24":"#f9ca2477"}`, color:"#f9ca24", padding:"16px 0", fontSize:8, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:2, marginBottom:14, transition:"all 0.12s", boxShadow:hoveredBtn==="create"?"0 0 16px #f9ca2433,inset 0 0 20px #f9ca2408":"none", position:"relative" }}>
-              <span style={{ marginRight: 8, fontSize: 10 }}>✦</span>CREATE ROOM
-            </button>
-            <button onClick={() => { setMode("join"); setError(""); }} onMouseEnter={() => setHoveredBtn("join")} onMouseLeave={() => setHoveredBtn(null)}
-              style={{ width:"100%", background:hoveredBtn==="join"?"linear-gradient(135deg,#45aaf218,#45aaf208)":"transparent", border:`2px solid ${hoveredBtn==="join"?"#45aaf2":"#45aaf277"}`, color:"#45aaf2", padding:"16px 0", fontSize:8, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:2, transition:"all 0.12s", boxShadow:hoveredBtn==="join"?"0 0 16px #45aaf233,inset 0 0 20px #45aaf208":"none", position:"relative" }}>
-              <span style={{ marginRight: 8 }}>▶</span>JOIN ROOM
-            </button>
-          </>)}
-          {mode === "created" && (<>
-            <div style={{ fontSize: 6, color: "#26de81", letterSpacing: 3, marginBottom: 20, textAlign: "center" }}>✓ ROOM CREATED!</div>
-            <div style={{ width:"100%", background:"#050510", border:"2px solid #f9ca24", boxShadow:"0 0 24px #f9ca2433", padding:"18px 0", textAlign:"center", marginBottom:12 }}>
-              <div style={{ fontSize:6, color:"#666", letterSpacing:2, marginBottom:8 }}>ROOM CODE</div>
-              <div style={{ fontSize:30, color:"#f9ca24", letterSpacing:10, textShadow:"0 0 14px #f9ca24bb, 0 0 30px #f9ca2444" }}>{createdCode}</div>
-            </div>
-            <button onClick={handleCopyCode} style={{ width:"100%", background:copied?"#26de8118":"transparent", border:`1px solid ${copied?"#26de81":"#45aaf255"}`, color:copied?"#26de81":"#45aaf2", padding:"10px 0", fontSize:6, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:1, marginBottom:18, transition:"all 0.15s" }}>
-              {copied ? "✓ LINK COPIED!" : "⎘  COPY INVITE LINK"}
-            </button>
-            <div style={{ fontSize:6, color:"#444", lineHeight:2.4, textAlign:"center", marginBottom:20 }}>Share the code or link<br/>with your friend, then<br/>click below to wait for them.</div>
-            <button onClick={() => onEnter(createdCode)} onMouseEnter={() => setHoveredBtn("go")} onMouseLeave={() => setHoveredBtn(null)}
-              style={{ width:"100%", background:hoveredBtn==="go"?"#f9ca2418":"transparent", border:`2px solid ${hoveredBtn==="go"?"#f9ca24":"#f9ca2477"}`, color:"#f9ca24", padding:"14px 0", fontSize:8, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:2, transition:"all 0.12s", boxShadow:hoveredBtn==="go"?"0 0 16px #f9ca2433":"none" }}>
-              ENTER ROOM ▶
-            </button>
-          </>)}
-          {mode === "join" && (<>
-            <div style={{ fontSize:6, color:"#45aaf2", letterSpacing:3, marginBottom:20, textAlign:"center" }}>— ENTER ROOM CODE —</div>
-            <div style={{ position:"relative", width:"100%", marginBottom:8 }}>
-              <input value={joinCode} onChange={e=>{ setJoinCode(e.target.value.slice(0,6)); setError(""); }}
-                onKeyDown={e=>e.key==="Enter"&&handleJoin()} autoFocus maxLength={6} placeholder="X7K2PQ"
-                style={{ display:"block", width:"100%", boxSizing:"border-box", background:"#050510", border:`2px solid ${error?"#fc5c65":"#45aaf255"}`, color:"#fff", padding:"14px 16px", fontSize:18, fontFamily:"'Press Start 2P',monospace", outline:"none", textTransform:"uppercase", letterSpacing:8, textAlign:"center", caretColor:"#45aaf2" }}/>
-            </div>
-            {error ? <div style={{ fontSize:6, color:"#fc5c65", marginBottom:16, letterSpacing:1 }}>{error}</div> : <div style={{ height:22, marginBottom:16 }}/>}
-            <div style={{ display:"flex", gap:12, width:"100%" }}>
-              <button onClick={() => { setMode("main"); setJoinCode(""); setError(""); }} style={{ flex:1, background:"transparent", border:"1px solid #333", color:"#555", padding:"12px 0", fontSize:6, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:1 }}>◀ BACK</button>
-              <button onClick={handleJoin} onMouseEnter={() => setHoveredBtn("enter")} onMouseLeave={() => setHoveredBtn(null)}
-                style={{ flex:2, background:hoveredBtn==="enter"?"#45aaf218":"transparent", border:`2px solid ${hoveredBtn==="enter"?"#45aaf2":"#45aaf277"}`, color:"#45aaf2", padding:"12px 0", fontSize:7, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:2, transition:"all 0.12s" }}>ENTER ▶</button>
-            </div>
-          </>)}
+
+        {/* Tab bar */}
+        <div style={{ display:"flex", borderTop:"1px solid #1a1a2e", borderBottom:"1px solid #1a1a2e" }}>
+          {(["play","scores","cards"] as const).map(t => {
+            const labels = { play:"⚔ PLAY", scores:"★ SCORES", cards:"📖 CARDS" };
+            const colors = { play:"#f9ca24", scores:"#a55eea", cards:"#45aaf2" };
+            const active = tab === t;
+            return (
+              <button key={t} onClick={() => setTab(t)}
+                style={{ flex:1, background:active?`${colors[t]}11`:"transparent", border:"none", borderBottom:active?`2px solid ${colors[t]}`:"2px solid transparent", color:active?colors[t]:"#333", padding: isMobile ? "10px 4px" : "12px 8px", fontSize: isMobile ? 5 : 6, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:1, transition:"all 0.15s", marginBottom:-1 }}>
+                {labels[t]}
+              </button>
+            );
+          })}
         </div>
+
+        {/* ── PLAY TAB ── */}
+        {tab === "play" && (
+          <div style={{ padding: isMobile ? "20px 16px 28px" : "28px 40px 36px", display:"flex", flexDirection:"column", alignItems:"center" }}>
+            {mode === "main" && (<>
+              <div style={{ fontSize:6, color:"#444", letterSpacing:3, marginBottom:20 }}>— SELECT MODE —</div>
+              <button onClick={handleCreate} onMouseEnter={()=>setHoveredBtn("create")} onMouseLeave={()=>setHoveredBtn(null)}
+                style={{ width:"100%", background:hoveredBtn==="create"?"linear-gradient(135deg,#f9ca2418,#f9ca2408)":"transparent", border:`2px solid ${hoveredBtn==="create"?"#f9ca24":"#f9ca2477"}`, color:"#f9ca24", padding:"16px 0", fontSize:8, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:2, marginBottom:14, transition:"all 0.12s", boxShadow:hoveredBtn==="create"?"0 0 16px #f9ca2433,inset 0 0 20px #f9ca2408":"none" }}>
+                <span style={{ marginRight:8, fontSize:10 }}>✦</span>CREATE ROOM
+              </button>
+              <button onClick={()=>{setMode("join");setError("");}} onMouseEnter={()=>setHoveredBtn("join")} onMouseLeave={()=>setHoveredBtn(null)}
+                style={{ width:"100%", background:hoveredBtn==="join"?"linear-gradient(135deg,#45aaf218,#45aaf208)":"transparent", border:`2px solid ${hoveredBtn==="join"?"#45aaf2":"#45aaf277"}`, color:"#45aaf2", padding:"16px 0", fontSize:8, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:2, transition:"all 0.12s", boxShadow:hoveredBtn==="join"?"0 0 16px #45aaf233,inset 0 0 20px #45aaf208":"none" }}>
+                <span style={{ marginRight:8 }}>▶</span>JOIN ROOM
+              </button>
+            </>)}
+
+            {mode === "created" && (<>
+              <div style={{ fontSize:6, color:"#26de81", letterSpacing:3, marginBottom:20, textAlign:"center" }}>✓ ROOM CREATED!</div>
+              <div style={{ width:"100%", background:"#050510", border:"2px solid #f9ca24", boxShadow:"0 0 24px #f9ca2433", padding:"18px 0", textAlign:"center", marginBottom:12 }}>
+                <div style={{ fontSize:6, color:"#666", letterSpacing:2, marginBottom:8 }}>ROOM CODE</div>
+                <div style={{ fontSize: isMobile ? 24 : 30, color:"#f9ca24", letterSpacing:10, textShadow:"0 0 14px #f9ca24bb,0 0 30px #f9ca2444" }}>{createdCode}</div>
+              </div>
+              <button onClick={handleCopyCode} style={{ width:"100%", background:copied?"#26de8118":"transparent", border:`1px solid ${copied?"#26de81":"#45aaf255"}`, color:copied?"#26de81":"#45aaf2", padding:"10px 0", fontSize:6, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:1, marginBottom:18, transition:"all 0.15s" }}>
+                {copied?"✓ LINK COPIED!":"⎘  COPY INVITE LINK"}
+              </button>
+              <div style={{ fontSize:6, color:"#444", lineHeight:2.4, textAlign:"center", marginBottom:20 }}>Share the code or link<br/>with your friend, then<br/>click below to wait for them.</div>
+              <button onClick={()=>onEnter(createdCode)} onMouseEnter={()=>setHoveredBtn("go")} onMouseLeave={()=>setHoveredBtn(null)}
+                style={{ width:"100%", background:hoveredBtn==="go"?"#f9ca2418":"transparent", border:`2px solid ${hoveredBtn==="go"?"#f9ca24":"#f9ca2477"}`, color:"#f9ca24", padding:"14px 0", fontSize:8, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:2, transition:"all 0.12s", boxShadow:hoveredBtn==="go"?"0 0 16px #f9ca2433":"none" }}>
+                ENTER ROOM ▶
+              </button>
+            </>)}
+
+            {mode === "join" && (<>
+              <div style={{ fontSize:6, color:"#45aaf2", letterSpacing:3, marginBottom:20, textAlign:"center" }}>— ENTER ROOM CODE —</div>
+              <div style={{ position:"relative", width:"100%", marginBottom:8 }}>
+                <input value={joinCode} onChange={e=>{setJoinCode(e.target.value.slice(0,6));setError("");}}
+                  onKeyDown={e=>e.key==="Enter"&&handleJoin()} autoFocus maxLength={6} placeholder="X7K2PQ"
+                  style={{ display:"block", width:"100%", boxSizing:"border-box", background:"#050510", border:`2px solid ${error?"#fc5c65":"#45aaf255"}`, color:"#fff", padding:"14px 16px", fontSize:18, fontFamily:"'Press Start 2P',monospace", outline:"none", textTransform:"uppercase", letterSpacing:8, textAlign:"center", caretColor:"#45aaf2" }}/>
+              </div>
+              {error?<div style={{ fontSize:6, color:"#fc5c65", marginBottom:16, letterSpacing:1 }}>{error}</div>:<div style={{ height:22, marginBottom:16 }}/>}
+              <div style={{ display:"flex", gap:12, width:"100%" }}>
+                <button onClick={()=>{setMode("main");setJoinCode("");setError("");}} style={{ flex:1, background:"transparent", border:"1px solid #333", color:"#555", padding:"12px 0", fontSize:6, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:1 }}>◀ BACK</button>
+                <button onClick={handleJoin} onMouseEnter={()=>setHoveredBtn("enter")} onMouseLeave={()=>setHoveredBtn(null)}
+                  style={{ flex:2, background:hoveredBtn==="enter"?"#45aaf218":"transparent", border:`2px solid ${hoveredBtn==="enter"?"#45aaf2":"#45aaf277"}`, color:"#45aaf2", padding:"12px 0", fontSize:7, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:2, transition:"all 0.12s" }}>ENTER ▶</button>
+              </div>
+            </>)}
+          </div>
+        )}
+
+        {/* ── SCORES TAB ── */}
+        {tab === "scores" && (
+          <div style={{ padding: isMobile ? "16px 12px 24px" : "20px 28px 28px", minHeight:200 }}>
+            <div style={{ fontSize:6, color:"#a55eea", letterSpacing:3, marginBottom:16, textAlign:"center" }}>— TOP WARRIORS —</div>
+            {leaderboard.length === 0 ? (
+              <div style={{ textAlign:"center", fontSize:6, color:"#333", padding:"30px 0", animation:"blink 1s step-end infinite" }}>▓ LOADING... ▓</div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                {/* Header row */}
+                <div style={{ display:"flex", padding:"6px 8px", borderBottom:"1px solid #1a1a2e", marginBottom:4 }}>
+                  <span style={{ fontSize:5, color:"#333", width:24 }}>#</span>
+                  <span style={{ fontSize:5, color:"#333", flex:1 }}>NAME</span>
+                  <span style={{ fontSize:5, color:"#333", width:40, textAlign:"right" }}>W</span>
+                  <span style={{ fontSize:5, color:"#333", width:40, textAlign:"right" }}>L</span>
+                  <span style={{ fontSize:5, color:"#333", width:48, textAlign:"right" }}>RATE</span>
+                </div>
+                {leaderboard.map((e, i) => {
+                  const total = e.wins + e.losses;
+                  const rate = total > 0 ? Math.round((e.wins / total) * 100) : 0;
+                  const rankColor = i === 0 ? "#f9ca24" : i === 1 ? "#aaa" : i === 2 ? "#cd7f32" : "#444";
+                  const medals = ["👑","🥈","🥉"];
+                  return (
+                    <div key={e.sessionToken} style={{ display:"flex", alignItems:"center", padding:"8px", background:i%2===0?"#ffffff04":"transparent", borderLeft:`2px solid ${rankColor}22` }}>
+                      <span style={{ fontSize:i<3?9:6, width:24, color:rankColor }}>{i<3?medals[i]:i+1}</span>
+                      <span style={{ fontSize:6, flex:1, color:i<3?"#ddd":"#777", letterSpacing:0.5, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.name.toUpperCase()}</span>
+                      <span style={{ fontSize:6, width:40, textAlign:"right", color:"#26de81" }}>{e.wins}</span>
+                      <span style={{ fontSize:6, width:40, textAlign:"right", color:"#fc5c65" }}>{e.losses}</span>
+                      <span style={{ fontSize:6, width:48, textAlign:"right", color:rate>=60?"#f9ca24":rate>=40?"#aaa":"#555" }}>{rate}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <button onClick={fetchLeaderboard} style={{ marginTop:16, width:"100%", background:"transparent", border:"1px solid #a55eea44", color:"#444", padding:"8px", fontSize:6, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:1 }}>↺ REFRESH</button>
+          </div>
+        )}
+
+        {/* ── CARDS TAB ── */}
+        {tab === "cards" && (
+          <div style={{ padding: isMobile ? "12px 10px 20px" : "16px 20px 24px" }}>
+            <div style={{ fontSize:6, color:"#45aaf2", letterSpacing:3, marginBottom:12, textAlign:"center" }}>— CARD COMPENDIUM —</div>
+
+            {/* Rarity filter pills */}
+            <div style={{ display:"flex", flexWrap:"wrap", gap:4, justifyContent:"center", marginBottom:14 }}>
+              {(["all", ...RARITY_ORDER] as const).map(r => {
+                const color = r === "all" ? "#888" : RARITY_COLORS[r as Rarity];
+                const active = rarityFilter === r;
+                return (
+                  <button key={r} onClick={()=>setRarityFilter(r)}
+                    style={{ background:active?`${color}22`:"transparent", border:`1px solid ${active?color:color+"44"}`, color:active?color:color+"88", padding: isMobile ? "4px 7px" : "4px 10px", fontSize: isMobile ? 4 : 5, fontFamily:"'Press Start 2P',monospace", cursor:"pointer", letterSpacing:0.5, transition:"all 0.12s", borderRadius:0 }}>
+                    {r === "all" ? "ALL" : RARITY_LABELS[r as Rarity]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Card grid */}
+            <div style={{ display:"grid", gridTemplateColumns: isMobile ? "repeat(3,1fr)" : "repeat(4,1fr)", gap: isMobile ? 6 : 8, maxHeight: isMobile ? "40vh" : "45vh", overflowY:"auto", paddingRight:4 }}>
+              {filteredCards.map(id => {
+                const def = CARD_DEFS[id];
+                const isSelected = selectedCard === id;
+                return (
+                  <button key={id} onClick={()=>setSelectedCard(isSelected?null:id)}
+                    style={{ background:isSelected?`${def.color}18`:def.bgColor, border:`1.5px solid ${isSelected?def.color:def.color+"55"}`, padding: isMobile ? "8px 4px" : "10px 6px", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:4, transition:"all 0.12s", boxShadow:isSelected?`0 0 10px ${def.glowColor}55`:"none", fontFamily:"'Press Start 2P',monospace" }}>
+                    <span style={{ fontSize: isMobile ? 16 : 20, filter:`drop-shadow(0 0 4px ${def.glowColor})` }}>{def.icon}</span>
+                    <span style={{ fontSize: isMobile ? 4 : 5, color:def.color, lineHeight:1.6, textAlign:"center", letterSpacing:0.3 }}>{def.name}</span>
+                    <span style={{ fontSize: isMobile ? 3 : 4, color:RARITY_COLORS[def.rarity], letterSpacing:0.5 }}>{RARITY_LABELS[def.rarity]}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Selected card detail */}
+            {selectedCard && selectedDef && (
+              <div style={{ marginTop:12, background:"#050510", border:`2px solid ${selectedDef.color}`, padding: isMobile ? "12px" : "16px", animation:"slideUp 0.2s ease", position:"relative" }}>
+                <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:RARITY_COLORS[selectedDef.rarity], boxShadow:`0 0 6px ${RARITY_COLORS[selectedDef.rarity]}` }}/>
+                <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
+                  <span style={{ fontSize: isMobile ? 24 : 28, filter:`drop-shadow(0 0 6px ${selectedDef.glowColor})` }}>{selectedDef.icon}</span>
+                  <div>
+                    <div style={{ fontSize: isMobile ? 7 : 8, color:selectedDef.color, letterSpacing:1, marginBottom:4 }}>{selectedDef.name}</div>
+                    <span style={{ fontSize: isMobile ? 5 : 6, color:RARITY_COLORS[selectedDef.rarity], background:`${RARITY_COLORS[selectedDef.rarity]}18`, border:`1px solid ${RARITY_COLORS[selectedDef.rarity]}44`, padding:"2px 6px", letterSpacing:1 }}>
+                      {RARITY_LABELS[selectedDef.rarity]}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ fontSize: isMobile ? 6 : 7, color:"#ccc", lineHeight:2.2, letterSpacing:0.3 }}>{selectedDef.description}</div>
+                <button onClick={()=>setSelectedCard(null)} style={{ position:"absolute", top:8, right:8, background:"transparent", border:"none", color:"#333", fontSize:10, cursor:"pointer", fontFamily:"'Press Start 2P',monospace" }}>✕</button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ height:2, background:"linear-gradient(90deg,transparent,#45aaf233,#a55eea33,#f9ca2433,transparent)" }}/>
       </div>
-      <div style={{ marginTop:16, fontSize:5, color:"#1e1e2e", letterSpacing:2, zIndex:2 }}>★ KRAM KARD v1.3 ★</div>
+      <div style={{ marginTop:12, fontSize:5, color:"#1e1e2e", letterSpacing:2, zIndex:2 }}>★ KRAM KARD v1.4 ★</div>
     </div>
   );
 }
@@ -229,12 +416,12 @@ function Lobby({ onEnter }: { onEnter: (code: string) => void }) {
 function HPBar({ hp, maxHp, compact }: { hp: number; maxHp: number; compact?: boolean }) {
   const pct = Math.max(0, Math.min(100, (hp / maxHp) * 100));
   const color = pct > 50 ? "#26de81" : pct > 25 ? "#f9ca24" : "#fc5c65";
-  const segments = compact ? 12 : 20;
+  const segments = compact ? 16 : 20;
   return (
     <div style={{ display: "flex", gap: compact ? 1 : 2, alignItems: "center" }}>
       {Array.from({ length: segments }).map((_, i) => {
         const filled = i < Math.round((pct / 100) * segments);
-        return <div key={i} style={{ width: compact ? 6 : 8, height: compact ? 8 : 12, background: filled ? color : "#111", border: `1px solid ${filled ? color : "#222"}`, boxShadow: filled ? `0 0 3px ${color}88` : "none" }} />;
+        return <div key={i} style={{ width: compact ? 12 : 8, height: compact ? 14 : 12, background: filled ? color : "#111", border: `1px solid ${filled ? color : "#222"}`, boxShadow: filled ? `0 0 3px ${color}88` : "none" }} />;
       })}
       <span style={{ marginLeft: 4, fontSize: compact ? 8 : 10, color: "#ccc" }}>{hp}</span>
     </div>
@@ -301,8 +488,8 @@ function HandCard({ cardId, index, total, onClick, disabled, mobile }: {
 
   const baseW = mobile ? 90 : 138;
   const hovW = mobile ? 110 : 165;
-  const baseH = mobile ? 130 : 205;
-  const hovH = mobile ? 160 : 240;
+  const baseH = mobile ? 160 : 205;
+  const hovH = mobile ? 190 : 240;
 
   return (
     <div
@@ -346,12 +533,9 @@ function HandCard({ cardId, index, total, onClick, disabled, mobile }: {
           <div style={{ textAlign:"center", padding:"2px 0" }}>
             <span style={{ fontSize: mobile ? 4 : 5, color:RARITY_COLORS[def.rarity], letterSpacing:1 }}>{RARITY_LABELS[def.rarity]}</span>
           </div>
-          {(!mobile || hovered) && (
-            <div style={{ padding: mobile ? "4px 6px 8px" : (hovered?"9px 10px 14px":"5px 8px 8px"), textAlign:"center" }}>
-              <div style={{ fontSize: mobile ? 5 : (hovered?6:5), color:hovered?"#bbb":"#666", lineHeight:2 }}>{def.description}</div>
-            </div>
-          )}
-          <div style={{ height:2, background:def.color+"44" }}/>
+          <div style={{ padding: mobile ? "4px 6px 8px" : (hovered?"9px 10px 14px":"5px 8px 8px"), textAlign:"center", flex: 1 }}>
+            <div style={{ fontSize: mobile ? 5 : (hovered?6:5), color: mobile ? "#aaa" : (hovered?"#bbb":"#666"), lineHeight:2 }}>{def.description}</div>
+          </div>  
         </>
       ) : null}
     </div>
@@ -546,6 +730,16 @@ export default function App() {
   const [nameSet, setNameSet]                 = useState(false);
   const [roomFull, setRoomFull]               = useState(false);
   const [soundEnabled, setSoundEnabled]       = useState(false);
+  const [lobbyLeaderboard, setLobbyLeaderboard] = useState<LeaderboardEntry[]>([]);
+
+  function fetchLobbyLeaderboard() {
+    const s = io(SERVER_URL, { transports: ["websocket", "polling"], autoConnect: true });
+    s.on("leaderboard", (data: LeaderboardEntry[]) => {
+      setLobbyLeaderboard(data);
+      s.disconnect();
+    });
+    s.emit("getLeaderboard");
+  }
   const [roomId, setRoomId]                   = useState<string | null>(getRoomIdFromUrl);
   const [showInactivityWarning, setShowInactivityWarning] = useState(false);
   const [warningCountdown, setWarningCountdown]           = useState(WARNING_COUNTDOWN_S);
@@ -666,7 +860,11 @@ export default function App() {
       <div style={{ background:"#05050f", minHeight:"100vh", position:"fixed", inset:0, overflow:"hidden" }}>
         <style>{`html,body,#root{background:#05050f!important;min-height:100vh;margin:0;padding:0;}@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}*{box-sizing:border-box;}`}</style>
         <Starfield />
-        <Lobby onEnter={(code) => setRoomId(code)} />
+        <Lobby
+          onEnter={(code) => setRoomId(code)}
+          leaderboard={lobbyLeaderboard}
+          fetchLeaderboard={fetchLobbyLeaderboard}
+        />
       </div>
     );
   }
