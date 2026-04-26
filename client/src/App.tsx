@@ -349,6 +349,7 @@ return (
       <div style={{ marginTop:12, fontSize:5, color:"#1e1e2e", letterSpacing:2, zIndex:2 }}>★ KRAM KARD v1.4 ★</div>
     </div>
   );
+}
 
 // ─── HP Bar ───────────────────────────────────────────────────────────────────
 function HPBar({ hp, maxHp, compact }: { hp: number; maxHp: number; compact?: boolean }) {
