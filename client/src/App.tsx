@@ -57,13 +57,11 @@ function getOrCreateSession(): string {
   return token;
 }
 
-// New: just read room from URL (returns null if not present)
 function getRoomIdFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search);
   return params.get("room");
 }
 
-// New: generate a fresh 6-char code and set it in the URL
 function createRoomCode(): string {
   const code = Math.random().toString(36).slice(2, 8).toUpperCase();
   const url = new URL(window.location.href);
@@ -72,7 +70,6 @@ function createRoomCode(): string {
   return code;
 }
 
-// New: validate and navigate to an existing room code
 function joinRoomCode(code: string): string {
   const upper = code.trim().toUpperCase();
   const url = new URL(window.location.href);
@@ -634,10 +631,7 @@ function NarrationPanel({ text }: { text: string }) {
   );
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
-
-const INACTIVITY_MS = 3 * 60 * 1000;
-const WARNING_COUNTDOWN_S = 15;
+// ─── Socket (module-level, created once) ─────────────────────────────────────
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3000";
 const socket: Socket = io(SERVER_URL, {
@@ -649,28 +643,53 @@ const socket: Socket = io(SERVER_URL, {
   autoConnect: false,
 });
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const INACTIVITY_MS = 3 * 60 * 1000;
+const WARNING_COUNTDOWN_S = 15;
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+
 export default function App() {
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  // ── All state / refs declared unconditionally ─────────────────────────────
+  const [gameState, setGameState]           = useState<GameState | null>(null);
+  const [leaderboard, setLeaderboard]       = useState<LeaderboardEntry[]>([]);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [showNameModal, setShowNameModal] = useState(false);
-  const [nameSet, setNameSet] = useState(false);
-  const [roomFull, setRoomFull] = useState(false);
+  const [showNameModal, setShowNameModal]   = useState(false);
+  const [nameSet, setNameSet]               = useState(false);
+  const [roomFull, setRoomFull]             = useState(false);
+  const [soundEnabled, setSoundEnabled]     = useState(false);
+  const [roomId, setRoomId]                 = useState<string | null>(getRoomIdFromUrl);
 
   const [showInactivityWarning, setShowInactivityWarning] = useState(false);
-  const [warningCountdown, setWarningCountdown] = useState(WARNING_COUNTDOWN_S);
-  const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countdownInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [warningCountdown, setWarningCountdown]           = useState(WARNING_COUNTDOWN_S);
 
-  const sessionToken = useRef(getOrCreateSession());
+  const inactivityTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownInterval  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionToken       = useRef(getOrCreateSession());
+  const prevGameOver       = useRef(false);
 
-  // ── CHANGED: roomId is now state (null = show lobby) ─────────────────────
-  const [roomId, setRoomId] = useState<string | null>(getRoomIdFromUrl);
+  // ── Derived values (safe even when gameState is null) ─────────────────────
+  const myToken            = gameState?.myToken;
+  const myPlayer           = myToken ? gameState?.players[myToken] : null;
+  const opponentToken      = myToken
+    ? Object.keys(gameState?.players ?? {}).find(t => t !== myToken)
+    : null;
+  const opponentPlayer     = opponentToken ? gameState?.players[opponentToken] : null;
+  const isMyTurn           = gameState?.turn === myToken;
+  const playerCount        = Object.keys(gameState?.players ?? {}).length;
+  const isGameOver         = gameState?.gameOver ?? false;
+  const winnerId           = gameState?.winnerId;
+  const winnerName         = winnerId ? gameState?.players[winnerId]?.name : null;
+  const iWon               = winnerId === myToken;
+  const myRematchReady     = myPlayer?.rematchReady ?? false;
+  const opponentRematchReady = opponentPlayer?.rematchReady ?? false;
+  const lastNarration      = gameState?.lastNarration ?? "";
 
   // ── Inactivity helpers ────────────────────────────────────────────────────
 
   const clearInactivityTimers = () => {
-    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    if (inactivityTimer.current)   clearTimeout(inactivityTimer.current);
     if (countdownInterval.current) clearInterval(countdownInterval.current);
   };
 
@@ -706,6 +725,9 @@ export default function App() {
     setTimeout(() => { window.location.href = window.location.origin; }, 300);
   };
 
+  // ── All useEffect hooks — always called, never conditional ───────────────
+
+  // Inactivity timer: resets whenever the battle log changes
   useEffect(() => {
     if (!gameState || gameState.gameOver || Object.keys(gameState.players).length < 2) {
       clearInactivityTimers();
@@ -716,10 +738,16 @@ export default function App() {
     return clearInactivityTimers;
   }, [gameState?.log]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Socket setup ──────────────────────────────────────────────────────────
-
+  // Victory / defeat sound — fires once when the game ends
   useEffect(() => {
-    // Don't connect until we have a room
+    if (isGameOver && !prevGameOver.current) {
+      if (iWon) playVictory(); else playDefeat();
+    }
+    prevGameOver.current = isGameOver;
+  }, [isGameOver, iWon]);
+
+  // Socket setup — only runs when roomId becomes non-null
+  useEffect(() => {
     if (!roomId) return;
 
     const link = document.createElement("link");
@@ -728,7 +756,7 @@ export default function App() {
     document.head.appendChild(link);
 
     socket.on("stateUpdate", (s: GameState) => setGameState(s));
-    socket.on("roomFull", () => setRoomFull(true));
+    socket.on("roomFull",    ()              => setRoomFull(true));
     socket.on("leaderboard", (data: LeaderboardEntry[]) => setLeaderboard(data));
 
     socket.on("connect", () => {
@@ -739,7 +767,7 @@ export default function App() {
           sessionToken: sessionToken.current,
           preferredName: name,
         });
-        setNameSet(true); // ← returning player: mark as joined so waiting screen shows
+        setNameSet(true);
       }
     });
 
@@ -759,6 +787,8 @@ export default function App() {
     };
   }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
   function doJoin(name: string) {
     localStorage.setItem("kramkard_name", name);
     socket.emit("joinRoom", {
@@ -776,30 +806,34 @@ export default function App() {
     socket.emit("setName", name);
   }
 
-  const [soundEnabled, setSoundEnabled] = useState(false);
-
   function handleSoundToggle() {
     const next = toggleSound();
     setSoundEnabled(next);
   }
-  const playCard = (cardId: CardId) => { playCardPlay(); socket.emit("playCard", cardId); };
-  const requestRematch = () => { playWhoosh(); socket.emit("rematch"); };
-  const openLeaderboard = () => { playModalOpen(); socket.emit("getLeaderboard"); setShowLeaderboard(true); };
+
+  const playCard       = (cardId: CardId) => { playCardPlay(); socket.emit("playCard", cardId); };
+  const requestRematch = ()               => { playWhoosh();   socket.emit("rematch"); };
+  const openLeaderboard = () => {
+    playModalOpen();
+    socket.emit("getLeaderboard");
+    setShowLeaderboard(true);
+  };
 
   const goHome = () => {
     window.location.href = window.location.origin + window.location.pathname.replace(/\/+$/, "");
   };
 
   const handleLeave = () => {
-    if (isGameOver) { goHome(); return; }
-    if (playerCount < 2) { goHome(); return; }
+    if (isGameOver)       { goHome(); return; }
+    if (playerCount < 2)  { goHome(); return; }
     if (window.confirm("Forfeit the match? Your opponent will be declared the winner.")) {
       socket.emit("forfeit");
       setTimeout(goHome, 300);
     }
   };
 
-  // ── LOBBY: show before anything else if no room selected ─────────────────
+  // ── Early returns — AFTER all hooks ───────────────────────────────────────
+
   if (!roomId) {
     return (
       <div style={{ background: "#05050f", minHeight: "100vh", position: "fixed", inset: 0, overflow: "hidden" }}>
@@ -823,28 +857,7 @@ export default function App() {
     );
   }
 
-  const myToken = gameState?.myToken;
-  const myPlayer = myToken ? gameState?.players[myToken] : null;
-  const opponentToken = myToken ? Object.keys(gameState?.players ?? {}).find(t => t !== myToken) : null;
-  const opponentPlayer = opponentToken ? gameState?.players[opponentToken] : null;
-  const isMyTurn = gameState?.turn === myToken;
-  const playerCount = Object.keys(gameState?.players ?? {}).length;
-  const isGameOver = gameState?.gameOver ?? false;
-  const winnerId = gameState?.winnerId;
-  const winnerName = winnerId ? gameState?.players[winnerId]?.name : null;
-  const iWon = winnerId === myToken;
-  const myRematchReady = myPlayer?.rematchReady ?? false;
-  const opponentRematchReady = opponentPlayer?.rematchReady ?? false;
-  const lastNarration = gameState?.lastNarration ?? "";
-
-  // Play victory / defeat sound once when game ends
-  const prevGameOver = useRef(false);
-  useEffect(() => {
-    if (isGameOver && !prevGameOver.current) {
-      if (iWon) playVictory(); else playDefeat();
-    }
-    prevGameOver.current = isGameOver;
-  }, [isGameOver, iWon]);
+  // ── Main render ───────────────────────────────────────────────────────────
 
   return (
     <div style={{ background: "#05050f", minHeight: "100vh", color: "#e0e0e0", fontFamily: "'Press Start 2P', monospace", overflowX: "hidden", position: "relative" }}>
@@ -859,8 +872,8 @@ export default function App() {
       <Starfield />
       <div style={{ position: "fixed", inset: 0, zIndex: 1, pointerEvents: "none", background: "repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,0.06) 2px,rgba(0,0,0,0.06) 4px)" }} />
 
-      {showNameModal && <NameModal onSubmit={handleNameSubmit} />}
-      {showLeaderboard && <LeaderboardPanel entries={leaderboard} myToken={myToken ?? ""} onClose={() => { playModalClose(); setShowLeaderboard(false); }} />}
+      {showNameModal    && <NameModal onSubmit={handleNameSubmit} />}
+      {showLeaderboard  && <LeaderboardPanel entries={leaderboard} myToken={myToken ?? ""} onClose={() => { playModalClose(); setShowLeaderboard(false); }} />}
       {showInactivityWarning && (
         <InactivityWarning secondsLeft={warningCountdown} onStayIn={handleStayIn} onLeave={handleInactivityLeave} />
       )}
