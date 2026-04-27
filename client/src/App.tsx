@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { CARD_DEFS, RARITY_COLORS, RARITY_LABELS, type CardId, type Rarity, type CardDef } from "./cardDefs";
-import { toggleSound, isSoundOn, playTick, playCardPlay, playModalOpen, playModalClose, playVictory, playDefeat, playWhoosh } from "./audio";
+import { toggleSound, isSoundOn, playTick, playCardPlay, playModalOpen, playModalClose, playVictory, playDefeat, playWhoosh, playTimerTick } from "./audio";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface PlayerState {
@@ -28,8 +28,8 @@ interface PlayerState {
   eventHorizonActive: boolean;
   neutronStarTicks: number;
   healBlocked: number;
-  overflowDiscard: number;
-  overflowCount: number;
+  overflowPending: boolean;
+  overflowDiscardCount: number;
   lastCard: CardId | null;
   lastCardDmg: number;
   hand: (CardId | "???")[];
@@ -47,7 +47,7 @@ interface GameState {
   isDraw: boolean;
   roomId: string;
   lastNarration: string;
-  turnStartTime: number; // ms epoch from server
+  turnStartTime: number;
 }
 
 interface LeaderboardEntry {
@@ -93,7 +93,6 @@ function useIsMobile() {
 }
 
 // ─── Turn Timer hook ──────────────────────────────────────────────────────────
-// Returns seconds remaining (0–30) based on turnStartTime from the server.
 const TURN_SECONDS = 30;
 function useTurnTimer(turnStartTime: number, active: boolean): number {
   const [secsLeft, setSecsLeft] = useState(TURN_SECONDS);
@@ -373,7 +372,7 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
 
         <div style={{ height: 2, background: "linear-gradient(90deg,transparent,#45aaf233,#a55eea33,#f9ca2433,transparent)" }} />
       </div>
-      <div style={{ marginTop: 14, fontSize: isMobile ? 7 : 8, color: "#1e1e2e", letterSpacing: 2, zIndex: 2 }}>★ KRAM KARD v1.7 ★</div>
+      <div style={{ marginTop: 14, fontSize: isMobile ? 7 : 8, color: "#1e1e2e", letterSpacing: 2, zIndex: 2 }}>★ KRAM KARD v1.8 ★</div>
     </div>
   );
 }
@@ -409,27 +408,16 @@ function TurnTimerRing({ secsLeft, isMyTurn }: { secsLeft: number; isMyTurn: boo
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "'Press Start 2P',monospace" }}>
       <svg width={size} height={size} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
-        {/* background track */}
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#1a1a2e" strokeWidth={4} />
-        {/* progress arc */}
         <circle
           cx={size/2} cy={size/2} r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth={4}
-          strokeDasharray={`${dash} ${circ}`}
-          strokeLinecap="round"
-          style={{
-            filter: `drop-shadow(0 0 4px ${color})`,
-            transition: "stroke-dasharray 0.4s linear, stroke 0.3s",
-          }}
+          fill="none" stroke={color} strokeWidth={4}
+          strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
+          style={{ filter: `drop-shadow(0 0 4px ${color})`, transition: "stroke-dasharray 0.4s linear, stroke 0.3s" }}
         />
       </svg>
       <span style={{
-        fontSize: 11,
-        color,
-        minWidth: 22,
-        textAlign: "center",
+        fontSize: 11, color, minWidth: 22, textAlign: "center",
         textShadow: urgent ? `0 0 8px ${color}` : "none",
         animation: urgent ? "blink 0.6s step-end infinite" : "none",
       }}>
@@ -480,7 +468,52 @@ function BattleCard({ player, isActive, isMine, compact }: { player: PlayerState
         {player.eventHorizonActive && <StatusBadge label="E.HORIZON" color="#00ffcc" />}
         {(player.neutronStarTicks ?? 0) > 0 && <StatusBadge label={`N.STAR×${player.neutronStarTicks}`} color="#00ffcc" />}
         {(player.healBlocked ?? 0) > 0 && <StatusBadge label={`HEAL❄:${player.healBlocked}`} color="#74b9ff" />}
-        {(player.overflowDiscard ?? 0) > 0 && <StatusBadge label={`OVERFLOW↓${player.overflowCount}`} color="#f9ca24" />}
+        {player.overflowPending && <StatusBadge label={`OVERFLOW↓${player.overflowDiscardCount}`} color="#f9ca24" />}
+      </div>
+    </div>
+  );
+}
+
+// ─── Overflow Discard Modal ───────────────────────────────────────────────────
+function OverflowDiscardModal({ hand, onDiscard }: { hand: CardId[]; onDiscard: (ids: CardId[]) => void }) {
+  const [selected, setSelected] = useState<CardId[]>([]);
+  const isMobile = useIsMobile();
+
+  function toggle(id: CardId) {
+    setSelected(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : prev.length < 2 ? [...prev, id] : prev
+    );
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Press Start 2P',monospace" }}>
+      <div style={{ background: "#080810", border: "2px solid #f9ca24", padding: isMobile ? "20px 14px" : "28px 32px", maxWidth: "92vw", width: 520, boxShadow: "0 0 40px #f9ca2440" }}>
+        <div style={{ fontSize: isMobile ? 9 : 11, color: "#f9ca24", letterSpacing: 2, marginBottom: 6, textAlign: "center" }}>⚠ OVERFLOW</div>
+        <div style={{ fontSize: isMobile ? 7 : 8, color: "#aaa", lineHeight: 2.2, marginBottom: 18, textAlign: "center" }}>
+          Select 2 cards to discard before acting.
+          <br /><span style={{ color: "#555" }}>({selected.length}/2 selected)</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3,1fr)" : "repeat(4,1fr)", gap: 8, marginBottom: 20 }}>
+          {hand.map((id, i) => {
+            const def = CARD_DEFS[id];
+            const isSelected = selected.includes(id);
+            return (
+              <button key={`${id}-${i}`} onClick={() => toggle(id)}
+                style={{ background: isSelected ? `${def.color}22` : def.bgColor, border: `2px solid ${isSelected ? def.color : def.color + "44"}`, padding: "10px 6px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, fontFamily: "'Press Start 2P',monospace", boxShadow: isSelected ? `0 0 12px ${def.glowColor}66` : "none", transition: "all 0.12s", position: "relative" }}>
+                {isSelected && <div style={{ position: "absolute", top: 4, right: 5, fontSize: 8, color: "#fc5c65" }}>✕</div>}
+                <span style={{ fontSize: 22, filter: `drop-shadow(0 0 4px ${def.glowColor})` }}>{def.icon}</span>
+                <span style={{ fontSize: 6, color: def.color, textAlign: "center", lineHeight: 1.6 }}>{def.name}</span>
+                <span style={{ fontSize: 5, color: RARITY_COLORS[def.rarity] }}>{RARITY_LABELS[def.rarity]}</span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          onClick={() => selected.length === 2 && onDiscard(selected)}
+          disabled={selected.length !== 2}
+          style={{ width: "100%", background: selected.length === 2 ? "transparent" : "#0a0a0a", border: `2px solid ${selected.length === 2 ? "#f9ca24" : "#333"}`, color: selected.length === 2 ? "#f9ca24" : "#444", padding: "12px 0", fontSize: isMobile ? 9 : 10, fontFamily: "'Press Start 2P',monospace", cursor: selected.length === 2 ? "pointer" : "default", letterSpacing: 2, transition: "all 0.15s", boxShadow: selected.length === 2 ? "0 0 16px #f9ca2440" : "none" }}>
+          {selected.length === 2 ? "DISCARD SELECTED ▶" : `SELECT ${2 - selected.length} MORE`}
+        </button>
       </div>
     </div>
   );
@@ -730,6 +763,7 @@ export default function App() {
   const countdownInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionToken      = useRef(getOrCreateSession());
   const prevGameOver      = useRef(false);
+  const prevSecsLeft      = useRef(TURN_SECONDS);
 
   const myToken              = gameState?.myToken;
   const myPlayer             = myToken ? gameState?.players[myToken] : null;
@@ -747,22 +781,33 @@ export default function App() {
   const lastNarration        = gameState?.lastNarration ?? "";
   const turnStartTime        = gameState?.turnStartTime ?? 0;
 
-  // ── Turn timer — only ticks when game is live and we know whose turn it is ──
+  // Overflow discard pending for local player
+  const overflowPending      = myPlayer?.overflowPending ?? false;
+
+  // ── Turn timer — only ticks when game is live
   const timerActive = playerCount === 2 && !isGameOver && !!gameState?.turn;
   const secsLeft    = useTurnTimer(turnStartTime, timerActive);
 
-  // ── Auto-forfeit when timer hits 0 on my turn ────────────────────────────
+  // ── Timer tick sound — play on each second when urgent and it's my turn
+  useEffect(() => {
+    if (!isMyTurn || !timerActive) { prevSecsLeft.current = TURN_SECONDS; return; }
+    if (secsLeft <= 10 && secsLeft < prevSecsLeft.current && secsLeft > 0) {
+      playTimerTick();
+    }
+    prevSecsLeft.current = secsLeft;
+  }, [secsLeft, isMyTurn, timerActive]);
+
+  // ── Auto-draw when timer hits 0 on my turn ──────────────────────────────
   const timerFiredRef = useRef(false);
   useEffect(() => {
     if (!isMyTurn || !timerActive) { timerFiredRef.current = false; return; }
     if (secsLeft === 0 && !timerFiredRef.current) {
       timerFiredRef.current = true;
-      // Draw a card automatically — kinder than forfeiting
       socket.emit("drawCard");
     }
   }, [secsLeft, isMyTurn, timerActive]);
 
-  // Reset the fired flag whenever a new turn starts
+  // Reset fired flag on new turn
   useEffect(() => { timerFiredRef.current = false; }, [turnStartTime]);
 
   const clearInactivityTimers = () => {
@@ -812,6 +857,7 @@ export default function App() {
     prevGameOver.current = isGameOver;
   }, [isGameOver, iWon, isDraw]);
 
+  // ── Socket setup
   useEffect(() => {
     if (!roomId) return;
     const link = document.createElement("link");
@@ -822,6 +868,7 @@ export default function App() {
     socket.on("stateUpdate", (s: GameState) => setGameState(s));
     socket.on("roomFull", () => setRoomFull(true));
     socket.on("leaderboard", (data: LeaderboardEntry[]) => setLeaderboard(data));
+    socket.on("overflowRequired", () => { /* handled via gameState.overflowPending */ });
     socket.on("connect", () => {
       const name = localStorage.getItem("kramkard_name");
       if (name) {
@@ -834,7 +881,7 @@ export default function App() {
     socket.connect();
     return () => {
       socket.off("stateUpdate"); socket.off("roomFull");
-      socket.off("leaderboard"); socket.off("connect");
+      socket.off("leaderboard"); socket.off("connect"); socket.off("overflowRequired");
       clearInactivityTimers();
     };
   }, [roomId]); // eslint-disable-line
@@ -846,7 +893,13 @@ export default function App() {
   }
   function handleNameSubmit(name: string) { playModalClose(); setShowNameModal(false); doJoin(name); socket.emit("setName", name); }
   function handleSoundToggle() { setSoundEnabled(toggleSound()); }
-  const playCard       = (cardId: CardId) => { playCardPlay(); socket.emit("playCard", cardId); };
+
+  // Play card — pass rarity for per-rarity audio
+  const playCard = (cardId: CardId) => {
+    const rarity = CARD_DEFS[cardId]?.rarity;
+    playCardPlay(rarity);
+    socket.emit("playCard", cardId);
+  };
   const drawCard       = ()               => { playWhoosh();   socket.emit("drawCard"); };
   const requestRematch = ()               => { playWhoosh();   socket.emit("rematch"); };
   const openLeaderboard = () => { playModalOpen(); socket.emit("getLeaderboard"); setShowLeaderboard(true); };
@@ -856,6 +909,11 @@ export default function App() {
     if (window.confirm("Forfeit the match? Your opponent will be declared the winner.")) {
       socket.emit("forfeit"); setTimeout(goHome, 300);
     }
+  };
+
+  // Handle overflow discard
+  const handleOverflowDiscard = (ids: CardId[]) => {
+    socket.emit("overflowDiscard", ids);
   };
 
   if (!roomId) {
@@ -876,7 +934,7 @@ export default function App() {
     );
   }
 
-  const urgent = secsLeft <= 10 && timerActive;
+  const urgent = secsLeft <= 10 && timerActive && isMyTurn;
 
   return (
     <div style={{ background: "#05050f", minHeight: "100vh", color: "#e0e0e0", fontFamily: "'Press Start 2P',monospace", overflowX: "hidden", position: "relative", paddingBottom: isMobile ? 60 : 0 }}>
@@ -896,6 +954,14 @@ export default function App() {
       {showNameModal    && <NameModal onSubmit={handleNameSubmit} />}
       {showLeaderboard  && <LeaderboardPanel entries={leaderboard} myToken={myToken ?? ""} onClose={() => { playModalClose(); setShowLeaderboard(false); }} />}
       {showInactivityWarning && <InactivityWarning secondsLeft={warningCountdown} onStayIn={handleStayIn} onLeave={handleInactivityLeave} />}
+
+      {/* Overflow discard modal — shown when server flags overflowPending for our player */}
+      {overflowPending && isMyTurn && myPlayer && (
+        <OverflowDiscardModal
+          hand={myPlayer.hand.filter(c => c !== "???") as CardId[]}
+          onDiscard={handleOverflowDiscard}
+        />
+      )}
 
       <button onClick={handleSoundToggle} title={soundEnabled ? "Sound ON" : "Sound OFF"}
         style={{ position: "fixed", top: 14, left: 14, zIndex: 20, background: "transparent", border: `1px solid ${soundEnabled ? "#f9ca24" : "#333"}`, color: soundEnabled ? "#f9ca24" : "#444", padding: "6px 10px", fontSize: 13, fontFamily: "'Press Start 2P',monospace", cursor: "pointer", boxShadow: soundEnabled ? "0 0 7px #f9ca2444" : "none", transition: "all 0.15s" }}>
@@ -935,16 +1001,13 @@ export default function App() {
         {/* ── Turn status row: label + timer + draw button ── */}
         {!isGameOver && playerCount === 2 && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: isMobile ? 10 : 16, flexWrap: "wrap" }}>
-            {/* Turn label */}
             <div style={{ fontSize: isMobile ? 7 : 8, color: isMyTurn ? "#f9ca24" : "#444", letterSpacing: 2, textShadow: isMyTurn ? "0 0 6px #f9ca24" : "none", animation: isMyTurn ? "blink 1.2s step-end infinite" : "none", whiteSpace: "nowrap" }}>
-              {isMyTurn ? "► YOUR TURN ◄" : "-- FOE'S TURN --"}
+              {isMyTurn
+                ? (overflowPending ? "⚠ DISCARD 2 CARDS" : "► YOUR TURN ◄")
+                : "-- FOE'S TURN --"}
             </div>
-
-            {/* Timer ring — always visible during a live game */}
             <TurnTimerRing secsLeft={secsLeft} isMyTurn={isMyTurn ?? false} />
-
-            {/* Draw card button — only on your turn */}
-            {isMyTurn && (
+            {isMyTurn && !overflowPending && (
               <button
                 onClick={drawCard}
                 style={{
@@ -954,10 +1017,7 @@ export default function App() {
                   padding: isMobile ? "6px 10px" : "7px 14px",
                   fontSize: isMobile ? 6 : 7,
                   fontFamily: "'Press Start 2P',monospace",
-                  cursor: "pointer",
-                  letterSpacing: 1,
-                  transition: "all 0.15s",
-                  whiteSpace: "nowrap",
+                  cursor: "pointer", letterSpacing: 1, transition: "all 0.15s", whiteSpace: "nowrap",
                   animation: urgent ? "urgentPulse 0.6s ease-in-out infinite" : "none",
                 }}
               >
@@ -967,7 +1027,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Fallback turn label when game not started */}
         {!isGameOver && playerCount < 2 && (
           <div style={{ textAlign: "center", fontSize: isMobile ? 7 : 8, color: "#444", letterSpacing: 2, minHeight: 18 }} />
         )}
@@ -1008,8 +1067,8 @@ export default function App() {
                   cardId={cardId}
                   index={i}
                   total={myPlayer.hand.length}
-                  onClick={() => cardId !== "???" && playCard(cardId as CardId)}
-                  disabled={!isMyTurn || isGameOver}
+                  onClick={() => cardId !== "???" && !overflowPending && playCard(cardId as CardId)}
+                  disabled={!isMyTurn || isGameOver || overflowPending}
                   mobile={isMobile}
                 />
               ))}
