@@ -47,6 +47,7 @@ interface GameState {
   isDraw: boolean;
   roomId: string;
   lastNarration: string;
+  turnStartTime: number; // ms epoch from server
 }
 
 interface LeaderboardEntry {
@@ -89,6 +90,24 @@ function useIsMobile() {
     return () => window.removeEventListener("resize", handler);
   }, []);
   return isMobile;
+}
+
+// ─── Turn Timer hook ──────────────────────────────────────────────────────────
+// Returns seconds remaining (0–30) based on turnStartTime from the server.
+const TURN_SECONDS = 30;
+function useTurnTimer(turnStartTime: number, active: boolean): number {
+  const [secsLeft, setSecsLeft] = useState(TURN_SECONDS);
+  useEffect(() => {
+    if (!active || !turnStartTime) { setSecsLeft(TURN_SECONDS); return; }
+    const tick = () => {
+      const elapsed = (Date.now() - turnStartTime) / 1000;
+      setSecsLeft(Math.max(0, Math.round(TURN_SECONDS - elapsed)));
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [turnStartTime, active]);
+  return secsLeft;
 }
 
 // ─── Starfield ────────────────────────────────────────────────────────────────
@@ -195,13 +214,11 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
         overflow: "hidden",
         marginTop: isMobile ? 30 : 0,
       }}>
-        {/* Corner dots */}
         {[["top", "left"], ["top", "right"], ["bottom", "left"], ["bottom", "right"]].map(([v, h], i) => (
           <div key={i} style={{ position: "absolute", [v]: -3, [h]: -3, width: 12, height: 12, background: "#f9ca24", boxShadow: "0 0 10px #f9ca24" }} />
         ))}
         <div style={{ height: 3, background: "linear-gradient(90deg,transparent,#f9ca24,#a55eea,#45aaf2,transparent)" }} />
 
-        {/* Header */}
         <div style={{ textAlign: "center", padding: isMobile ? "22px 16px 16px" : "32px 48px 20px" }}>
           <div style={{ fontSize: isMobile ? 8 : 9, color: "#a55eea", letterSpacing: 6, marginBottom: 10, animation: "blink 2s step-end infinite" }}>★ COSMIC ARENA ★</div>
           <div style={{ fontSize: isMobile ? 32 : 44, color: "#f9ca24", letterSpacing: 8, textShadow: "0 0 14px #f9ca24aa,0 0 36px #f9ca2444", marginBottom: 8 }}>KRAM KARD</div>
@@ -212,78 +229,36 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
           </div>
         </div>
 
-        {/* Tab bar */}
         <div style={{ display: "flex", borderTop: "1px solid #1a1a2e", borderBottom: "1px solid #1a1a2e" }}>
           {(["play", "scores", "cards"] as const).map(t => {
             const active = tab === t;
             const color = tabColors[t];
             return (
               <button key={t} onClick={() => setTab(t)} style={{
-                flex: 1,
-                background: active ? `${color}14` : "transparent",
-                border: "none",
-                borderBottom: active ? `3px solid ${color}` : "3px solid transparent",
+                flex: 1, background: active ? `${color}14` : "transparent",
+                border: "none", borderBottom: active ? `3px solid ${color}` : "3px solid transparent",
                 color: active ? color : "#444",
                 padding: isMobile ? "12px 4px" : "16px 8px",
-                fontSize: isMobile ? 8 : 9,
-                fontFamily: "'Press Start 2P',monospace",
-                cursor: "pointer",
-                letterSpacing: 1,
-                transition: "all 0.15s",
-                marginBottom: -1,
-              }}>
-                {tabLabels[t]}
-              </button>
+                fontSize: isMobile ? 8 : 9, fontFamily: "'Press Start 2P',monospace",
+                cursor: "pointer", letterSpacing: 1, transition: "all 0.15s", marginBottom: -1,
+              }}>{tabLabels[t]}</button>
             );
           })}
         </div>
 
-        {/* ── PLAY TAB ── */}
         {tab === "play" && (
           <div style={{ padding: isMobile ? "24px 18px 32px" : "36px 52px 44px", display: "flex", flexDirection: "column", alignItems: "center" }}>
             {mode === "main" && (<>
               <div style={{ fontSize: isMobile ? 8 : 9, color: "#444", letterSpacing: 4, marginBottom: 24 }}>— SELECT MODE —</div>
-              <button
-                onClick={handleCreate}
-                onMouseEnter={() => setHoveredBtn("create")}
-                onMouseLeave={() => setHoveredBtn(null)}
-                style={{
-                  width: "100%",
-                  background: hoveredBtn === "create" ? "linear-gradient(135deg,#f9ca2420,#f9ca240a)" : "transparent",
-                  border: `2px solid ${hoveredBtn === "create" ? "#f9ca24" : "#f9ca2477"}`,
-                  color: "#f9ca24",
-                  padding: isMobile ? "18px 0" : "20px 0",
-                  fontSize: isMobile ? 11 : 13,
-                  fontFamily: "'Press Start 2P',monospace",
-                  cursor: "pointer",
-                  letterSpacing: 2,
-                  marginBottom: 20,
-                  transition: "all 0.12s",
-                  boxShadow: hoveredBtn === "create" ? "0 0 20px #f9ca2440,inset 0 0 24px #f9ca240a" : "none",
-                }}>
+              <button onClick={handleCreate} onMouseEnter={() => setHoveredBtn("create")} onMouseLeave={() => setHoveredBtn(null)}
+                style={{ width: "100%", background: hoveredBtn === "create" ? "linear-gradient(135deg,#f9ca2420,#f9ca240a)" : "transparent", border: `2px solid ${hoveredBtn === "create" ? "#f9ca24" : "#f9ca2477"}`, color: "#f9ca24", padding: isMobile ? "18px 0" : "20px 0", fontSize: isMobile ? 11 : 13, fontFamily: "'Press Start 2P',monospace", cursor: "pointer", letterSpacing: 2, marginBottom: 20, transition: "all 0.12s", boxShadow: hoveredBtn === "create" ? "0 0 20px #f9ca2440,inset 0 0 24px #f9ca240a" : "none" }}>
                 <span style={{ marginRight: 10, fontSize: 13 }}>✦</span>CREATE ROOM
               </button>
-              <button
-                onClick={() => { setMode("join"); setError(""); }}
-                onMouseEnter={() => setHoveredBtn("join")}
-                onMouseLeave={() => setHoveredBtn(null)}
-                style={{
-                  width: "100%",
-                  background: hoveredBtn === "join" ? "linear-gradient(135deg,#45aaf220,#45aaf20a)" : "transparent",
-                  border: `2px solid ${hoveredBtn === "join" ? "#45aaf2" : "#45aaf277"}`,
-                  color: "#45aaf2",
-                  padding: isMobile ? "18px 0" : "20px 0",
-                  fontSize: isMobile ? 10 : 12,
-                  fontFamily: "'Press Start 2P',monospace",
-                  cursor: "pointer",
-                  letterSpacing: 2,
-                  transition: "all 0.12s",
-                  boxShadow: hoveredBtn === "join" ? "0 0 20px #45aaf240,inset 0 0 24px #45aaf20a" : "none",
-                }}>
+              <button onClick={() => { setMode("join"); setError(""); }} onMouseEnter={() => setHoveredBtn("join")} onMouseLeave={() => setHoveredBtn(null)}
+                style={{ width: "100%", background: hoveredBtn === "join" ? "linear-gradient(135deg,#45aaf220,#45aaf20a)" : "transparent", border: `2px solid ${hoveredBtn === "join" ? "#45aaf2" : "#45aaf277"}`, color: "#45aaf2", padding: isMobile ? "18px 0" : "20px 0", fontSize: isMobile ? 10 : 12, fontFamily: "'Press Start 2P',monospace", cursor: "pointer", letterSpacing: 2, transition: "all 0.12s", boxShadow: hoveredBtn === "join" ? "0 0 20px #45aaf240,inset 0 0 24px #45aaf20a" : "none" }}>
                 <span style={{ marginRight: 10 }}>▶</span>JOIN ROOM
               </button>
             </>)}
-
             {mode === "created" && (<>
               <div style={{ fontSize: isMobile ? 8 : 10, color: "#26de81", letterSpacing: 3, marginBottom: 22, textAlign: "center" }}>✓ ROOM CREATED!</div>
               <div style={{ width: "100%", background: "#050510", border: "2px solid #f9ca24", boxShadow: "0 0 28px #f9ca2440", padding: "22px 0", textAlign: "center", marginBottom: 14 }}>
@@ -294,33 +269,19 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
                 {copied ? "✓ LINK COPIED!" : "⎘  COPY INVITE LINK"}
               </button>
               <div style={{ fontSize: isMobile ? 8 : 9, color: "#444", lineHeight: 2.6, textAlign: "center", marginBottom: 22 }}>Share the code or link<br />with your friend, then<br />click below to wait for them.</div>
-              <button
-                onClick={() => onEnter(createdCode)}
-                onMouseEnter={() => setHoveredBtn("go")}
-                onMouseLeave={() => setHoveredBtn(null)}
+              <button onClick={() => onEnter(createdCode)} onMouseEnter={() => setHoveredBtn("go")} onMouseLeave={() => setHoveredBtn(null)}
                 style={{ width: "100%", background: hoveredBtn === "go" ? "#f9ca2418" : "transparent", border: `2px solid ${hoveredBtn === "go" ? "#f9ca24" : "#f9ca2477"}`, color: "#f9ca24", padding: isMobile ? "16px 0" : "18px 0", fontSize: isMobile ? 10 : 11, fontFamily: "'Press Start 2P',monospace", cursor: "pointer", letterSpacing: 2, transition: "all 0.12s", boxShadow: hoveredBtn === "go" ? "0 0 18px #f9ca2440" : "none" }}>
                 ENTER ROOM ▶
               </button>
             </>)}
-
             {mode === "join" && (<>
               <div style={{ fontSize: isMobile ? 8 : 10, color: "#45aaf2", letterSpacing: 3, marginBottom: 22, textAlign: "center" }}>— ENTER ROOM CODE —</div>
-              <input
-                value={joinCode}
-                onChange={e => { setJoinCode(e.target.value.slice(0, 6)); setError(""); }}
-                onKeyDown={e => e.key === "Enter" && handleJoin()}
-                autoFocus maxLength={6} placeholder="X7K2PQ"
-                style={{ display: "block", width: "100%", boxSizing: "border-box", background: "#050510", border: `2px solid ${error ? "#fc5c65" : "#45aaf255"}`, color: "#fff", padding: "16px", fontSize: isMobile ? 22 : 26, fontFamily: "'Press Start 2P',monospace", outline: "none", textTransform: "uppercase", letterSpacing: 10, textAlign: "center", caretColor: "#45aaf2", marginBottom: 8 }}
-              />
-              {error
-                ? <div style={{ fontSize: isMobile ? 8 : 9, color: "#fc5c65", marginBottom: 18, letterSpacing: 1 }}>{error}</div>
-                : <div style={{ height: 26, marginBottom: 18 }} />}
+              <input value={joinCode} onChange={e => { setJoinCode(e.target.value.slice(0, 6)); setError(""); }} onKeyDown={e => e.key === "Enter" && handleJoin()} autoFocus maxLength={6} placeholder="X7K2PQ"
+                style={{ display: "block", width: "100%", boxSizing: "border-box", background: "#050510", border: `2px solid ${error ? "#fc5c65" : "#45aaf255"}`, color: "#fff", padding: "16px", fontSize: isMobile ? 22 : 26, fontFamily: "'Press Start 2P',monospace", outline: "none", textTransform: "uppercase", letterSpacing: 10, textAlign: "center", caretColor: "#45aaf2", marginBottom: 8 }} />
+              {error ? <div style={{ fontSize: isMobile ? 8 : 9, color: "#fc5c65", marginBottom: 18, letterSpacing: 1 }}>{error}</div> : <div style={{ height: 26, marginBottom: 18 }} />}
               <div style={{ display: "flex", gap: 14, width: "100%" }}>
                 <button onClick={() => { setMode("main"); setJoinCode(""); setError(""); }} style={{ flex: 1, background: "transparent", border: "1px solid #333", color: "#555", padding: "14px 0", fontSize: isMobile ? 8 : 9, fontFamily: "'Press Start 2P',monospace", cursor: "pointer", letterSpacing: 1 }}>◀ BACK</button>
-                <button
-                  onClick={handleJoin}
-                  onMouseEnter={() => setHoveredBtn("enter")}
-                  onMouseLeave={() => setHoveredBtn(null)}
+                <button onClick={handleJoin} onMouseEnter={() => setHoveredBtn("enter")} onMouseLeave={() => setHoveredBtn(null)}
                   style={{ flex: 2, background: hoveredBtn === "enter" ? "#45aaf218" : "transparent", border: `2px solid ${hoveredBtn === "enter" ? "#45aaf2" : "#45aaf277"}`, color: "#45aaf2", padding: "14px 0", fontSize: isMobile ? 9 : 10, fontFamily: "'Press Start 2P',monospace", cursor: "pointer", letterSpacing: 2, transition: "all 0.12s" }}>
                   ENTER ▶
                 </button>
@@ -329,7 +290,6 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
           </div>
         )}
 
-        {/* ── SCORES TAB ── */}
         {tab === "scores" && (
           <div style={{ padding: isMobile ? "20px 14px 28px" : "28px 36px 36px", minHeight: 240 }}>
             <div style={{ fontSize: isMobile ? 9 : 10, color: "#a55eea", letterSpacing: 4, marginBottom: 20, textAlign: "center" }}>— TOP WARRIORS —</div>
@@ -338,8 +298,7 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 56px 56px 64px", padding: "8px 10px", borderBottom: "1px solid #2a2a3e", marginBottom: 4, gap: 0 }}>
-                  <span style={{ fontSize: isMobile ? 7 : 8, color: "#333", letterSpacing: 1 }}>#</span>
-                  <span style={{ fontSize: isMobile ? 7 : 8, color: "#333", letterSpacing: 1 }}>NAME</span>
+                  {["#", "NAME"].map((h, i) => <span key={i} style={{ fontSize: isMobile ? 7 : 8, color: "#333", letterSpacing: 1 }}>{h}</span>)}
                   <span style={{ fontSize: isMobile ? 7 : 8, color: "#26de81", letterSpacing: 1, textAlign: "right" }}>W</span>
                   <span style={{ fontSize: isMobile ? 7 : 8, color: "#fc5c65", letterSpacing: 1, textAlign: "right" }}>L</span>
                   <span style={{ fontSize: isMobile ? 7 : 8, color: "#f9ca24", letterSpacing: 1, textAlign: "right" }}>RATE</span>
@@ -365,14 +324,9 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
           </div>
         )}
 
-        {/* ── CARDS TAB ── */}
         {tab === "cards" && (
-          // ↓ FIX: The whole cards tab is a flex column. Grid scrolls independently.
-          //   The selected-card detail panel lives BELOW the grid, never inside the scroll area.
           <div style={{ display: "flex", flexDirection: "column", padding: isMobile ? "14px 10px 22px" : "20px 24px 28px", maxHeight: isMobile ? "72vh" : "62vh", overflow: "hidden" }}>
             <div style={{ fontSize: isMobile ? 9 : 10, color: "#45aaf2", letterSpacing: 4, marginBottom: 14, textAlign: "center" }}>— CARD COMPENDIUM —</div>
-
-            {/* Rarity filter pills */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "center", marginBottom: 16 }}>
               {(["all", ...RARITY_ORDER] as const).map(r => {
                 const color = r === "all" ? "#888" : RARITY_COLORS[r as Rarity];
@@ -384,18 +338,7 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
                 );
               })}
             </div>
-
-            {/* Card grid — fixed height, scrolls on its own */}
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(3,1fr)",
-              gap: isMobile ? 8 : 12,
-              overflowY: "auto",
-              // Fixed height so the detail panel below is always reachable
-              maxHeight: isMobile ? "30vh" : "28vh",
-              paddingRight: 4,
-              paddingBottom: 4,
-            }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(3,1fr)", gap: isMobile ? 8 : 12, overflowY: "auto", maxHeight: isMobile ? "30vh" : "28vh", paddingRight: 4, paddingBottom: 4 }}>
               {filteredCards.map(id => {
                 const def = CARD_DEFS[id];
                 const isSelected = selectedCard === id;
@@ -408,8 +351,6 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
                 );
               })}
             </div>
-
-            {/* Selected card detail — OUTSIDE the scroll area so it's always fully visible */}
             {selectedCard && CARD_DEFS[selectedCard] && (() => {
               const def = CARD_DEFS[selectedCard];
               return (
@@ -419,9 +360,7 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
                     <span style={{ fontSize: isMobile ? 28 : 34, filter: `drop-shadow(0 0 8px ${def.glowColor})`, flexShrink: 0 }}>{def.icon}</span>
                     <div>
                       <div style={{ fontSize: isMobile ? 9 : 10, color: def.color, letterSpacing: 1, marginBottom: 6 }}>{def.name}</div>
-                      <span style={{ fontSize: isMobile ? 8 : 9, color: RARITY_COLORS[def.rarity], border: `1px solid ${RARITY_COLORS[def.rarity]}44`, padding: "3px 8px" }}>
-                        {RARITY_LABELS[def.rarity]}
-                      </span>
+                      <span style={{ fontSize: isMobile ? 8 : 9, color: RARITY_COLORS[def.rarity], border: `1px solid ${RARITY_COLORS[def.rarity]}44`, padding: "3px 8px" }}>{RARITY_LABELS[def.rarity]}</span>
                     </div>
                   </div>
                   <div style={{ fontSize: isMobile ? 8 : 9, color: "#ccc", lineHeight: 2.4, letterSpacing: 0.3 }}>{def.description}</div>
@@ -434,7 +373,7 @@ function Lobby({ onEnter, leaderboard, fetchLeaderboard }: {
 
         <div style={{ height: 2, background: "linear-gradient(90deg,transparent,#45aaf233,#a55eea33,#f9ca2433,transparent)" }} />
       </div>
-      <div style={{ marginTop: 14, fontSize: isMobile ? 7 : 8, color: "#1e1e2e", letterSpacing: 2, zIndex: 2 }}>★ KRAM KARD v1.6 ★</div>
+      <div style={{ marginTop: 14, fontSize: isMobile ? 7 : 8, color: "#1e1e2e", letterSpacing: 2, zIndex: 2 }}>★ KRAM KARD v1.7 ★</div>
     </div>
   );
 }
@@ -451,6 +390,51 @@ function HPBar({ hp, maxHp, compact }: { hp: number; maxHp: number; compact?: bo
         return <div key={i} style={{ width: compact ? 12 : 9, height: compact ? 14 : 13, background: filled ? color : "#111", border: `1px solid ${filled ? color : "#222"}`, boxShadow: filled ? `0 0 3px ${color}88` : "none" }} />;
       })}
       <span style={{ marginLeft: 5, fontSize: compact ? 9 : 11, color: "#ccc" }}>{hp}</span>
+    </div>
+  );
+}
+
+// ─── Turn Timer Ring ──────────────────────────────────────────────────────────
+function TurnTimerRing({ secsLeft, isMyTurn }: { secsLeft: number; isMyTurn: boolean }) {
+  const pct = secsLeft / TURN_SECONDS;
+  const urgent = secsLeft <= 10;
+  const color = isMyTurn
+    ? (urgent ? "#fc5c65" : "#f9ca24")
+    : (urgent ? "#c44dff" : "#a55eea");
+  const size = 44;
+  const r = 18;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * pct;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "'Press Start 2P',monospace" }}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
+        {/* background track */}
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#1a1a2e" strokeWidth={4} />
+        {/* progress arc */}
+        <circle
+          cx={size/2} cy={size/2} r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={4}
+          strokeDasharray={`${dash} ${circ}`}
+          strokeLinecap="round"
+          style={{
+            filter: `drop-shadow(0 0 4px ${color})`,
+            transition: "stroke-dasharray 0.4s linear, stroke 0.3s",
+          }}
+        />
+      </svg>
+      <span style={{
+        fontSize: 11,
+        color,
+        minWidth: 22,
+        textAlign: "center",
+        textShadow: urgent ? `0 0 8px ${color}` : "none",
+        animation: urgent ? "blink 0.6s step-end infinite" : "none",
+      }}>
+        {secsLeft}
+      </span>
     </div>
   );
 }
@@ -512,7 +496,6 @@ function HandCard({ cardId, index, total, onClick, disabled, mobile }: {
   const mid = (total - 1) / 2;
   const rotate = mobile ? 0 : (index - mid) * 3.5;
   const translateY = mobile ? 0 : Math.abs(index - mid) * 3;
-
   const baseW = mobile ? 90 : 138;
   const hovW  = mobile ? 110 : 165;
   const baseH = mobile ? 160 : 205;
@@ -523,26 +506,7 @@ function HandCard({ cardId, index, total, onClick, disabled, mobile }: {
       onClick={disabled || isHidden ? undefined : onClick}
       onMouseEnter={() => { if (!disabled && !isHidden) { playTick(); setHovered(true); } }}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        cursor: disabled || isHidden ? "default" : "pointer",
-        position: "relative",
-        width: hovered ? hovW : baseW,
-        minHeight: hovered ? hovH : baseH,
-        background: isHidden ? "#0a0a14" : def!.bgColor,
-        border: `2px solid ${isHidden ? "#1a1a2e" : hovered ? def!.color : def!.color + "55"}`,
-        fontFamily: "'Press Start 2P', monospace",
-        transform: hovered && !mobile
-          ? "translateY(-40px) rotate(0deg) scale(1.1)"
-          : `translateY(${translateY}px) rotate(${rotate}deg)`,
-        transition: "all 0.15s ease",
-        opacity: disabled ? 0.45 : 1,
-        boxShadow: hovered && def
-          ? `0 0 0 2px ${def.color}, 0 0 28px ${def.glowColor}88, 0 0 56px ${def.glowColor}33`
-          : "none",
-        overflow: "hidden",
-        flexShrink: 0,
-        zIndex: hovered ? 10 : 1,
-      }}
+      style={{ cursor: disabled || isHidden ? "default" : "pointer", position: "relative", width: hovered ? hovW : baseW, minHeight: hovered ? hovH : baseH, background: isHidden ? "#0a0a14" : def!.bgColor, border: `2px solid ${isHidden ? "#1a1a2e" : hovered ? def!.color : def!.color + "55"}`, fontFamily: "'Press Start 2P', monospace", transform: hovered && !mobile ? "translateY(-40px) rotate(0deg) scale(1.1)" : `translateY(${translateY}px) rotate(${rotate}deg)`, transition: "all 0.15s ease", opacity: disabled ? 0.45 : 1, boxShadow: hovered && def ? `0 0 0 2px ${def.color}, 0 0 28px ${def.glowColor}88, 0 0 56px ${def.glowColor}33` : "none", overflow: "hidden", flexShrink: 0, zIndex: hovered ? 10 : 1 }}
     >
       {isHidden ? (
         <div style={{ height: "100%", minHeight: baseH, background: "repeating-linear-gradient(45deg,#0d0d1a 0px,#0d0d1a 4px,#111128 4px,#111128 8px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -577,8 +541,7 @@ function LeaderboardPanel({ entries, myToken, onClose }: { entries: LeaderboardE
         <div style={{ fontSize: 11, color: "#f9ca24", letterSpacing: 2, marginBottom: 18, textAlign: "center" }}>★ LEADERBOARD ★</div>
         {entries.length === 0 && <div style={{ fontSize: 8, color: "#555", textAlign: "center" }}>No records yet.</div>}
         <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 56px 56px 64px", padding: "6px 8px", borderBottom: "1px solid #2a2a3e", marginBottom: 4, gap: 0 }}>
-          <span style={{ fontSize: 8, color: "#444" }}>#</span>
-          <span style={{ fontSize: 8, color: "#444" }}>NAME</span>
+          <span style={{ fontSize: 8, color: "#444" }}>#</span><span style={{ fontSize: 8, color: "#444" }}>NAME</span>
           <span style={{ fontSize: 8, color: "#26de81", textAlign: "right" }}>W</span>
           <span style={{ fontSize: 8, color: "#fc5c65", textAlign: "right" }}>L</span>
           <span style={{ fontSize: 8, color: "#f9ca24", textAlign: "right" }}>RATE</span>
@@ -591,7 +554,7 @@ function LeaderboardPanel({ entries, myToken, onClose }: { entries: LeaderboardE
           return (
             <div key={e.sessionToken} style={{ display: "grid", gridTemplateColumns: "28px 1fr 56px 56px 64px", alignItems: "center", padding: "9px 8px", borderBottom: "1px solid #1a1a2e", color: e.sessionToken === myToken ? "#f9ca24" : "#aaa", gap: 0 }}>
               <span style={{ fontSize: i < 3 ? 14 : 8, color: rankColor }}>{i < 3 ? medals[i] : i + 1}</span>
-              <span style={{ fontSize: 8, marginLeft: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 6 }}>{e.name.toUpperCase()}</span>
+              <span style={{ fontSize: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 6 }}>{e.name.toUpperCase()}</span>
               <span style={{ fontSize: 8, color: "#26de81", textAlign: "right" }}>{e.wins}</span>
               <span style={{ fontSize: 8, color: "#fc5c65", textAlign: "right" }}>{e.losses}</span>
               <span style={{ fontSize: 8, color: rate >= 60 ? "#f9ca24" : rate >= 40 ? "#aaa" : "#555", textAlign: "right" }}>{rate}%</span>
@@ -662,11 +625,7 @@ function NarrationPanel({ text, inline }: { text: string; inline?: boolean }) {
     if (!text) return;
     setDisplayed("");
     let i = 0;
-    const interval = setInterval(() => {
-      i++;
-      setDisplayed(text.slice(0, i));
-      if (i >= text.length) clearInterval(interval);
-    }, 28);
+    const interval = setInterval(() => { i++; setDisplayed(text.slice(0, i)); if (i >= text.length) clearInterval(interval); }, 28);
     return () => clearInterval(interval);
   }, [text]);
   if (!text) return null;
@@ -786,6 +745,25 @@ export default function App() {
   const myRematchReady       = myPlayer?.rematchReady ?? false;
   const opponentRematchReady = opponentPlayer?.rematchReady ?? false;
   const lastNarration        = gameState?.lastNarration ?? "";
+  const turnStartTime        = gameState?.turnStartTime ?? 0;
+
+  // ── Turn timer — only ticks when game is live and we know whose turn it is ──
+  const timerActive = playerCount === 2 && !isGameOver && !!gameState?.turn;
+  const secsLeft    = useTurnTimer(turnStartTime, timerActive);
+
+  // ── Auto-forfeit when timer hits 0 on my turn ────────────────────────────
+  const timerFiredRef = useRef(false);
+  useEffect(() => {
+    if (!isMyTurn || !timerActive) { timerFiredRef.current = false; return; }
+    if (secsLeft === 0 && !timerFiredRef.current) {
+      timerFiredRef.current = true;
+      // Draw a card automatically — kinder than forfeiting
+      socket.emit("drawCard");
+    }
+  }, [secsLeft, isMyTurn, timerActive]);
+
+  // Reset the fired flag whenever a new turn starts
+  useEffect(() => { timerFiredRef.current = false; }, [turnStartTime]);
 
   const clearInactivityTimers = () => {
     if (inactivityTimer.current)   clearTimeout(inactivityTimer.current);
@@ -827,7 +805,7 @@ export default function App() {
 
   useEffect(() => {
     if (isGameOver && !prevGameOver.current) {
-      if (isDraw) { /* neutral sound or nothing */ }
+      if (isDraw) { /* neutral */ }
       else if (iWon) playVictory();
       else playDefeat();
     }
@@ -868,8 +846,9 @@ export default function App() {
   }
   function handleNameSubmit(name: string) { playModalClose(); setShowNameModal(false); doJoin(name); socket.emit("setName", name); }
   function handleSoundToggle() { setSoundEnabled(toggleSound()); }
-  const playCard        = (cardId: CardId) => { playCardPlay(); socket.emit("playCard", cardId); };
-  const requestRematch  = ()               => { playWhoosh(); socket.emit("rematch"); };
+  const playCard       = (cardId: CardId) => { playCardPlay(); socket.emit("playCard", cardId); };
+  const drawCard       = ()               => { playWhoosh();   socket.emit("drawCard"); };
+  const requestRematch = ()               => { playWhoosh();   socket.emit("rematch"); };
   const openLeaderboard = () => { playModalOpen(); socket.emit("getLeaderboard"); setShowLeaderboard(true); };
   const goHome = () => { window.location.href = window.location.origin + window.location.pathname.replace(/\/+$/, ""); };
   const handleLeave = () => {
@@ -897,6 +876,8 @@ export default function App() {
     );
   }
 
+  const urgent = secsLeft <= 10 && timerActive;
+
   return (
     <div style={{ background: "#05050f", minHeight: "100vh", color: "#e0e0e0", fontFamily: "'Press Start 2P',monospace", overflowX: "hidden", position: "relative", paddingBottom: isMobile ? 60 : 0 }}>
       <style>{`
@@ -906,6 +887,7 @@ export default function App() {
         @keyframes pulse{0%,100%{color:#f9ca24;text-shadow:0 0 8px #f9ca24}50%{color:#fff;text-shadow:0 0 20px #f9ca24}}
         @keyframes pulseDraw{0%,100%{color:#45aaf2;text-shadow:0 0 8px #45aaf2}50%{color:#fff;text-shadow:0 0 20px #45aaf2}}
         @keyframes pixelIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
+        @keyframes urgentPulse{0%,100%{box-shadow:0 0 8px #fc5c65}50%{box-shadow:0 0 24px #fc5c65,inset 0 0 8px #fc5c6522}}
       `}</style>
 
       <Starfield />
@@ -950,9 +932,45 @@ export default function App() {
           </button>
         </div>
 
-        <div style={{ textAlign: "center", fontSize: isMobile ? 7 : 8, color: isMyTurn ? "#f9ca24" : "#444", letterSpacing: 2, minHeight: 18, transition: "color .3s", textShadow: isMyTurn ? "0 0 6px #f9ca24" : "none", animation: isMyTurn ? "blink 1.2s step-end infinite" : "none" }}>
-          {!isGameOver && (playerCount === 2 ? (isMyTurn ? "► YOUR TURN — PICK A CARD ◄" : "-- OPPONENT'S TURN --") : "")}
-        </div>
+        {/* ── Turn status row: label + timer + draw button ── */}
+        {!isGameOver && playerCount === 2 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: isMobile ? 10 : 16, flexWrap: "wrap" }}>
+            {/* Turn label */}
+            <div style={{ fontSize: isMobile ? 7 : 8, color: isMyTurn ? "#f9ca24" : "#444", letterSpacing: 2, textShadow: isMyTurn ? "0 0 6px #f9ca24" : "none", animation: isMyTurn ? "blink 1.2s step-end infinite" : "none", whiteSpace: "nowrap" }}>
+              {isMyTurn ? "► YOUR TURN ◄" : "-- FOE'S TURN --"}
+            </div>
+
+            {/* Timer ring — always visible during a live game */}
+            <TurnTimerRing secsLeft={secsLeft} isMyTurn={isMyTurn ?? false} />
+
+            {/* Draw card button — only on your turn */}
+            {isMyTurn && (
+              <button
+                onClick={drawCard}
+                style={{
+                  background: "transparent",
+                  border: `1px solid ${urgent ? "#fc5c65" : "#45aaf255"}`,
+                  color: urgent ? "#fc5c65" : "#45aaf2",
+                  padding: isMobile ? "6px 10px" : "7px 14px",
+                  fontSize: isMobile ? 6 : 7,
+                  fontFamily: "'Press Start 2P',monospace",
+                  cursor: "pointer",
+                  letterSpacing: 1,
+                  transition: "all 0.15s",
+                  whiteSpace: "nowrap",
+                  animation: urgent ? "urgentPulse 0.6s ease-in-out infinite" : "none",
+                }}
+              >
+                🃏 DRAW & SKIP
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Fallback turn label when game not started */}
+        {!isGameOver && playerCount < 2 && (
+          <div style={{ textAlign: "center", fontSize: isMobile ? 7 : 8, color: "#444", letterSpacing: 2, minHeight: 18 }} />
+        )}
 
         {isMobile && playerCount === 2 && lastNarration && <NarrationPanel text={lastNarration} inline />}
 
